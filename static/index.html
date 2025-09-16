@@ -66,10 +66,10 @@
       <input id="inpName" placeholder="Ditt namn" style="flex:1;height:40px;padding:0 8px">
       <button class="btn" id="btnJoin">Gå med</button>
     </div>
-    <div style="display:flex;gap:8px;margin:8px 0">
-      <input id="inpHostToken" placeholder="Host token (för Start)" style="flex:1;height:40px;padding:0 8px">
-      <button class="btn" id="btnStart">Starta</button>
-    </div>
+<div style="display:flex; gap:8px">
+  <button class="btn" id="btnStart" style="display:none">Starta</button>
+</div>
+
     <hr>
     <table id="board" style="width:100%"><thead><tr><th>Spelare</th><th>Poäng</th></tr></thead><tbody></tbody></table>
   </aside>
@@ -100,10 +100,9 @@
         <input id="inpNameM" placeholder="Ditt namn" style="flex:1;height:40px;padding:0 8px">
         <button class="btn" id="btnJoinM">Gå med</button>
       </div>
-      <div style="display:flex;gap:8px;margin:8px 0">
-        <input id="inpHostTokenM" placeholder="Host token (för Start)" style="flex:1;height:40px;padding:0 8px">
-        <button class="btn" id="btnStartM">Starta</button>
-      </div>
+<div class="row" style="display:flex; gap:8px">
+  <button class="btn" id="btnStartM" style="display:none">Starta</button>
+</div>
     </div>
   </section>
 
@@ -179,7 +178,17 @@ async function loadTracks(){
 loadTracks();
 
 /* =================== WS & knappar =================== */
-let ws=null, roomId=null, hostToken=null, timer=null, youMarker=null, targetMarker=null;
+// ----- Host state -----
+let ws = null, roomId = null, hostToken = null, timer = null;
+const LS_KEY = (rid) => `ff_host_token_${rid}`;
+
+function updateHostUI(){
+  const isHost = !!hostToken && !!roomId;
+  const s1 = document.getElementById('btnStart');
+  const s2 = document.getElementById('btnStartM');
+  if (s1) s1.style.display = isHost ? 'inline-block' : 'none';
+  if (s2) s2.style.display = isHost ? 'inline-block' : 'none';
+}
 
 map.on('click', e=>{
   if(!ws){ return alert('Anslut ett rum först.'); }
