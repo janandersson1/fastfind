@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="sv">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+ <title>FastFinder Multiplayer – Namn → Adress</title>
+ <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+ <style>
+   html,body{height:100%;margin:0}
+   #app{display:grid;grid-template-rows:auto 1fr auto; height:100%}
+   header,footer{padding:8px 12px; background:#f4f4f4}
+   main{display:grid; grid-template-columns:300px 1fr; gap:8px; padding:8px}
+   #left{display:flex; flex-direction:column; gap:8px}
+   #map{width:100%; height:calc(100vh - 140px);}
+   .card{border:1px solid #ddd; border-radius:8px; padding:10px; background:#fff}
+   .row{display:flex; gap:6px; align-items:center}
+   .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+   @media(max-width: 800px){
+     main{grid-template-columns:1fr}
+     #map{height:50vh}
+   }
+   table{width:100%; border-collapse:collapse}
+   th,td{border-bottom:1px solid #eee; padding:6px}
+ </style>
+</head>
+<body>
+<div id="app">
+ <header>
+   <strong>FastFinder – Multiplayer</strong>
+ </header>
+ <main>
+   <div id="left">
+     <div class="card">
+       <div class="row">
+         <select id="track"></select>
+         <input id="rounds" type="number" min="1" max="20" value="5" style="width:80px">
+         <input id="timelimit" type="number" min="10" max="180" value="60" style="width:80px">
+       </div>
+       <div class="row" style="margin-top:6px">
+         <button id="create">Skapa rum (host)</button>
+         <input id="hostToken" type="text" placeholder="Host token" class="mono" style="flex:1">
+       </div>
+       <div class="row" style="margin-top:6px">
+         <input id="roomId" placeholder="Rumskod" class="mono" style="flex:1">
+         <input id="name" placeholder="Ditt namn" style="flex:1">
+         <button id="join">Gå med</button>
+       </div>
+       <div style="margin-top:6px">
+         <button id="start">Starta (host)</button>
+       </div>
+       <div style="margin-top:8px; font-size:14px">
+         <div>Bana: <span id="uiTrack">–</span></div>
+         <div>Rum: <span id="uiRoom" class="mono">–</span></div>
+       </div>
+     </div>
+
+     <div class="card">
+       <div>Mål (placera detta namn på rätt adress):</div>
+       <div id="targetName" style="font-weight:600; font-size:18px; margin:6px 0">–</div>
+       <div>Rond: <span id="roundIdx">–</span></div>
+       <div>Timer: <span id="timer">–</span> s</div>
+     </div>
+
+     <div class="card">
+       <div style="font-weight:600; margin-bottom:6px">Leaderboard</div>
+       <table id="board">
+         <thead><tr><th>Namn</th><th>Poäng</th></tr></thead>
+         <tbody></tbody>
+       </table>
+     </div>
+   </div>
+
+   <div id="map" class="card"></div>
+ </main>
+ <footer>
+   Tips: Host skapar rum → dela rumskoden → alla joinar → Host “Starta”.
+ </footer>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map = L.map('map').setView([59.334, 18.0667], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OSM'}).addTo(map);
+
+let ws = null, roomId=null, hostToken=null, timerInt=null, youMarker=null, targetMarker=null;
+
+function $(id){return document.getElementById(id)}
+function setBoard(items){
+ const tb = $("board").querySelector("tbody"); tb.innerHTML="";
+ (items||[]).forEach(r=>{
+   const tr = document.createElement("tr");
+   tr.innerHTML = `<td>${r.name}</td><td>${r.score_total}</td>`;
+   tb.appendChild(tr);
+ });
+}
+
+async function loadTracks(){
+ const r = await fetch("/api/tracks"); const js = await r.json();
+ const sel = $("track"); sel.innerHTML = "";
+ js.tracks.forEach(t=>{
+   const opt = document.createElement("option"); opt.value=t; opt.textContent=`${t} (${js.counts[t]})`;
+   sel.appendChild(opt);
+ });
+}
+loadTracks();
+
+$("create").onclick = async ()=>{
+ const track = $("track").value, rounds = +$("rounds").value, tl = +$("timelimit").value;
+ const r = await fetch("/api/room",{method:"POST", headers:{"Content-Type":"application/json"},
+   body: JSON.stringify({track, rounds, time_limit: tl})});
+ if(!r.ok){ alert(await r.text()); return;}
+ const js = await r.json();
+ roomId = js.room_id; hostToken = js.host_token;
+ $("roomId").value = roomId;
+ $("hostToken").value = hostToken;
+ $("uiRoom").textContent = roomId;
+ $("uiTrack").textContent = track;
+};
+
+$("join").onclick = async ()=>{
+ const rid = $("roomId").value.trim();
+ const nm  = ($("name").value || "Spelare").trim();
+ if(!rid){ alert("Ange rumskod"); return; }
+ ws = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+location.host+"/ws");
+ ws.onopen = ()=> ws.send(JSON.stringify({type:"join", room_id: rid, name: nm}));
+ ws.onmessage = ev => onWS(JSON.parse(ev.data));
+ ws.onclose = ()=> stopTimer();
+ roomId = rid;
+ $("uiRoom").textContent = rid;
+};
+
+$("start").onclick = ()=>{
+ if(!ws){ alert("Anslut först"); return; }
+ const tok = $("hostToken").value.trim();
+ if(!tok){ alert("Host token saknas"); return; }
+ ws.send(JSON.stringify({type:"start", host_token: tok}));
+};
+
+map.on("click", (e)=>{
+ if(!ws) return;
+ const {lat, lng} = e.latlng;
+ if(youMarker) map.removeLayer(youMarker);
+ youMarker = L.marker([lat,lng]).addTo(map).bindPopup("Din gissning").openPopup();
+ ws.send(JSON.stringify({type:"guess", lat: lat, lon: lng}));
+});
+
+function onWS(msg){
+ if(msg.type==="room_state"){
+   setBoard(msg.players);
+   $("uiTrack").textContent = msg.track;
+ }
+ else if(msg.type==="round_start"){
+   $("targetName").textContent = msg.name;
+   $("roundIdx").textContent = `${msg.round_index+1}`;
+   startTimer(msg.time_limit);
+   if(targetMarker){ map.removeLayer(targetMarker); targetMarker=null; }
+   if(youMarker){ map.removeLayer(youMarker); youMarker=null; }
+ }
+ else if(msg.type==="guess_result"){
+   stopTimer();
+   if(targetMarker) map.removeLayer(targetMarker);
+   targetMarker = L.circleMarker([msg.target.lat, msg.target.lon], {radius:8}).addTo(map).bindPopup("Rätt plats");
+   map.panTo([msg.target.lat, msg.target.lon]);
+   setBoard(msg.leaderboard);
+   // Visa din distans/poäng
+   const m = Math.round(msg.you.dist);
+   const s = msg.you.score;
+   alert(`Din gissning: ${m} m från rätt plats → ${s} poäng`);
+ }
+ else if(msg.type==="game_over"){
+   stopTimer();
+   setBoard(msg.leaderboard);
+   alert("Spelet är slut! 🎉");
+ }
+ else if(msg.type==="error"){
+   alert(msg.error);
+ }
+}
+
+function startTimer(sec){
+ $("timer").textContent = sec;
+ stopTimer();
+ timerInt = setInterval(()=>{
+   sec = Math.max(0, sec-1);
+   $("timer").textContent = sec;
+   if(sec===0) stopTimer();
+ }, 1000);
+}
+function stopTimer(){ if(timerInt){ clearInterval(timerInt); timerInt=null; } }
+</script>
+</body>
+</html>

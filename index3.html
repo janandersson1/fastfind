@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>FastFinder – Mobil UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root{
+      --bg: #0b0f12;
+      --glass: rgba(18,22,27,.55);
+      --glass-strong: rgba(18,22,27,.70);
+      --stroke: rgba(255,255,255,.10);
+      --text: #f6f7f9;
+      --muted: #cfd5db;
+      --accent: #62d59c;         /* primär knapp (grön) */
+      --accent-press: #49c688;
+      --danger: #ff6b6b;
+      --chip-bg: rgba(255,255,255,.12);
+      --radius: 14px;
+      --shadow: 0 6px 20px rgba(0,0,0,.35);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-t: env(safe-area-inset-top, 0px);
+    }
+
+    html, body { height:100%; margin:0; background:#000; color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif; }
+    #app { position:relative; height:100%; overflow:hidden; }
+
+    /* === FULLSCREEN MAP === */
+    #map { position:absolute; inset:0; }
+
+    /* === TOP HUD (chips) === */
+    .hud {
+      position:absolute; top:calc(8px + var(--safe-t)); left:0; right:0;
+      display:flex; justify-content:center; gap:8px; pointer-events:none;
+      z-index: 20;
+    }
+    .chip {
+      pointer-events:auto;
+      display:flex; align-items:center; gap:6px;
+      padding:6px 10px;
+      border-radius: 999px;
+      background: var(--chip-bg);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border:1px solid var(--stroke);
+      font-weight:600; font-size:13px;
+    }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+
+    /* === BOTTOM SHEET (dragbar) === */
+    .sheet {
+      position:absolute; left:0; right:0;
+      bottom:0; height:70%; /* maxhöjd */
+      translate: 0 calc(55% + var(--safe-b)); /* start i ‘peek’ */
+      z-index: 30;
+      display:flex; flex-direction:column;
+    }
+    .sheet-outer {
+      margin: 0 8px calc(8px + var(--safe-b));
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border:1px solid var(--stroke);
+      box-shadow: var(--shadow);
+      border-radius: calc(var(--radius) + 8px);
+      overflow:hidden;
+    }
+    .grabber {
+      display:flex; justify-content:center; align-items:center;
+      padding:10px 0 6px;
+      cursor:grab;
+    }
+    .grabber::before{
+      content:"";
+      width:40px; height:4px; border-radius:999px; background:rgba(255,255,255,.35);
+    }
+
+    /* Tabbar på toppen av sheet */
+    .tabs {
+      display:flex; gap:6px; padding:0 10px 10px;
+    }
+    .tab {
+      flex:1; text-align:center; padding:10px; font-weight:600; font-size:14px;
+      border-radius: 10px; background: rgba(255,255,255,.06); border:1px solid var(--stroke);
+      user-select:none;
+    }
+    .tab.active{ background: rgba(255,255,255,.14); }
+
+    /* Innehåll i sheet */
+    .sheet-body { padding: 8px 12px 12px; max-height: 45vh; overflow:auto; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .col { display:flex; flex-direction:column; gap:8px; }
+    .field, .button, .pill {
+      height:48px; border-radius:12px; border:1px solid var(--stroke);
+      background: rgba(255,255,255,.06); color:var(--text);
+      padding: 0 12px; font-size:16px;
+    }
+    .field { width: 100%; }
+    .button.primary { background: var(--accent); border-color: transparent; color:#0b1a12; font-weight:700; }
+    .button.primary:active { background: var(--accent-press); }
+    .button.ghost { background: rgba(255,255,255,.06); }
+    .danger { background: var(--danger); border-color: transparent; color:white; }
+
+    /* Bottenbar (primär actions) */
+    .bottbar {
+      position:absolute; left:0; right:0; bottom:0;
+      padding: 8px 10px calc(8px + var(--safe-b));
+      display:flex; gap:8px;
+      z-index: 40;
+      pointer-events:none; /* så kartan fångar panning */
+    }
+    .bottbar .btn {
+      pointer-events:auto;
+      flex:1; height:48px; border-radius:12px; border:1px solid var(--stroke);
+      background: var(--glass-strong);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color:var(--text); font-weight:700;
+    }
+    .btn.accent { background: var(--accent); color:#0b1a12; border-color:transparent; }
+    .btn:active{ opacity:.9; }
+
+    /* Kort/lista-stilar */
+    .card{
+      border:1px solid var(--stroke); border-radius:12px; padding:12px;
+      background: rgba(255,255,255,.04);
+    }
+    table{ width:100%; border-collapse:collapse; }
+    th, td{ padding:10px 8px; border-bottom:1px solid var(--stroke); font-size:15px; }
+    th{ text-align:left; color:var(--muted); font-weight:600; }
+
+    /* Små skärmar tweaks */
+    @media (min-width: 700px){
+      .sheet-body{ max-height: 50vh; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+
+  <!-- TOP HUD -->
+  <div class="hud">
+    <div class="chip"><div class="dot"></div><span id="hudRound">Rond 1/5</span></div>
+    <div class="chip">⏱ <span id="hudTimer">60 s</span></div>
+    <div class="chip">⭐ <span id="hudScore">0 p</span></div>
+  </div>
+
+  <!-- BOTTOM BAR (primära actions) -->
+  <div class="bottbar">
+    <button class="btn" id="btnHint">Ledtråd</button>
+    <button class="btn accent" id="btnGuess">Lås gissning</button>
+    <button class="btn" id="btnMap">Karta/Panorama</button>
+  </div>
+
+  <!-- DRAGGABLE SHEET -->
+  <div class="sheet" id="sheet">
+    <div class="sheet-outer">
+      <div class="grabber" id="grab"></div>
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="game">Spel</div>
+        <div class="tab" data-tab="board">Leaderboard</div>
+        <div class="tab" data-tab="room">Rum</div>
+      </div>
+      <div class="sheet-body">
+        <!-- TAB: SPEL -->
+        <div class="tabpane" id="pane-game">
+          <div class="card" style="margin-bottom:10px">
+            <div style="font-weight:700; font-size:18px; margin-bottom:6px">Placera rätt</div>
+            <div id="targetName" style="opacity:.9">BRF Eken 7</div>
+          </div>
+          <div class="row">
+            <button class="button ghost" id="btnCenter">Centrera karta</button>
+            <button class="button ghost" id="btnClear">Rensa markör</button>
+          </div>
+        </div>
+
+        <!-- TAB: LEADERBOARD -->
+        <div class="tabpane" id="pane-board" style="display:none">
+          <div class="card">
+            <table id="board">
+              <thead><tr><th>Spelare</th><th>Poäng</th></tr></thead>
+              <tbody>
+                <tr><td>Du</td><td>0</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB: RUM (Host/Join) -->
+        <div class="tabpane" id="pane-room" style="display:none">
+          <div class="col">
+            <div class="row">
+              <select class="field" id="selBana">
+                <option>Stockholm</option>
+                <option>Malmö</option>
+                <option>Göteborg</option>
+              </select>
+            </div>
+            <div class="row">
+              <input class="field" id="inpRounds" type="number" value="5" min="1" max="20" placeholder="Ronder">
+              <input class="field" id="inpTime" type="number" value="60" min="10" max="240" placeholder="Sek/rond">
+            </div>
+            <div class="row">
+              <button class="button primary" id="btnHost">Skapa rum</button>
+            </div>
+            <div class="row">
+              <input class="field" id="inpRoom" placeholder="Rumskod" />
+            </div>
+            <div class="row">
+              <input class="field" id="inpName" placeholder="Ditt namn" />
+              <button class="button ghost" id="btnJoin">Gå med</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /sheet-outer -->
+  </div><!-- /sheet -->
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // === KARTA (ersätt med panorama senare) ===
+  const map = L.map('map', { zoomControl:false }).setView([59.334, 18.0667], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+  let youMarker = null;
+
+  map.on('click', e=>{
+    if(youMarker) map.removeLayer(youMarker);
+    youMarker = L.marker(e.latlng).addTo(map).bindPopup('Din gissning').openPopup();
+  });
+
+  document.getElementById('btnCenter').onclick = ()=> map.setView([59.334, 18.0667], 13);
+  document.getElementById('btnClear').onclick  = ()=> { if(youMarker){ map.removeLayer(youMarker); youMarker=null; } };
+
+  // === FLikar ===
+  const tabs = document.querySelectorAll('.tab');
+  const panes = {
+    game: document.getElementById('pane-game'),
+    board: document.getElementById('pane-board'),
+    room: document.getElementById('pane-room')
+  };
+  tabs.forEach(t=>{
+    t.addEventListener('click', ()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      Object.values(panes).forEach(p=>p.style.display='none');
+      panes[t.dataset.tab].style.display='block';
+    });
+  });
+
+  // === BOTTOM SHEET DRAG ===
+  (function(){
+    const sheet = document.getElementById('sheet');
+    const grab  = document.getElementById('grab');
+    const stops = [ '55%', '25%', '0%' ]; // translateY från botten (peek/half/full)
+    let i = 0; // aktuellt stopp (0 = peek)
+    let startY = 0, startOffset = 0, dragging = false;
+
+    function apply(){
+      sheet.style.translate = `0 calc(${stops[i]} + env(safe-area-inset-bottom))`;
+    }
+    apply();
+
+    function nearestStop(px){
+      // px > 40 -> neråt; px < -40 -> upp
+      if(px < -40 && i < stops.length-1) i++;
+      else if(px > 40 && i > 0) i--;
+      apply();
+    }
+
+    function onStart(y){
+      dragging = true; startY = y;
+      const m = /translate\\(0 calc\\(([^)]+)\\)\\)/.exec(getComputedStyle(sheet).transform) || null;
+      startOffset = 0; // vi förlitar oss på CSS translate via stops
+      document.body.style.touchAction = 'none';
+    }
+    function onMove(y){
+      if(!dragging) return;
+      const dy = y - startY;
+      sheet.style.transition = 'none';
+      sheet.style.translate = `0 calc(${stops[i]} + ${dy}px + env(safe-area-inset-bottom))`;
+    }
+    function onEnd(y){
+      if(!dragging) return;
+      const dy = y - startY;
+      sheet.style.transition = 'transform .2s ease, translate .2s ease';
+      nearestStop(dy);
+      dragging = false;
+      document.body.style.touchAction = '';
+    }
+
+    grab.addEventListener('touchstart', e=> onStart(e.touches[0].clientY), {passive:true});
+    grab.addEventListener('touchmove',  e=> onMove(e.touches[0].clientY),  {passive:true});
+    grab.addEventListener('touchend',   e=> onEnd(e.changedTouches[0].clientY));
+    grab.addEventListener('mousedown',  e=> onStart(e.clientY));
+    window.addEventListener('mousemove',e=> onMove(e.clientY));
+    window.addEventListener('mouseup',  e=> onEnd(e.clientY));
+  })();
+
+  // === Dummy-knappar ===
+  document.getElementById('btnHint').onclick  = ()=> alert('Ledtråd (implementera serverlogik)');
+  document.getElementById('btnGuess').onclick = ()=> alert('Lås gissning (skicka WS → server)');
+  document.getElementById('btnMap').onclick   = ()=> alert('Växla kartläge/panorama');
+
+  // === HUD demo ===
+  let t = 60; const hudTimer = document.getElementById('hudTimer');
+  setInterval(()=>{ t = Math.max(0, t-1); hudTimer.textContent = t+' s'; }, 1000);
+</script>
+</body>
+</html>
