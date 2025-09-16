@@ -42,13 +42,15 @@ def load_all_places():
         s = s.replace(",", ".")
         return float(s)
 
-    def city_from_stem(stem: str) -> str:
-        s = stem.strip().lower()
-        if s == "malmo":   return "Malmö"
-        if s == "goteborg": return "Göteborg"
-        if s == "stockholm": return "Stockholm"
-        # fallback: versal första bokstaven
-        return s[:1].upper() + s[1:]
+def city_from_stem(stem: str) -> str:
+    s = (stem or "").strip().lower()
+    # Hitta stad även om filnamnet har prefix/suffix (t.ex. "places_stockholm_v1")
+    if "stockholm" in s: return "Stockholm"
+    if "malmo" in s or "malmö" in s: return "Malmö"
+    if "goteborg" in s or "göteborg" in s: return "Göteborg"
+    # fallback: sista segmentet efter "_" med versal först
+    last = s.split("_")[-1]
+    return last[:1].upper() + last[1:]
 
     places = []
     for p in DATA_DIR.glob("*.csv"):
