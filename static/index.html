@@ -6,179 +6,74 @@
   <title>FastFinder – Multiplayer</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
-/* ===== Bas-variabler (ljus) ===== */
-:root{
-  --sky:#8fb8d8; --sand:#ead7a8; --coral:#d98b87; --olive:#6f7d58;
-  --slate:#2f3a3e; --bg:#f7f9fb; --surface:#fff; --shadow:0 8px 24px rgba(0,0,0,.12);
-  --radius:14px;
-}
+    :root{ --olive:#6f7d58; --slate:#2f3a3e; --bg:#f7f9fb; --surface:#fff; --shadow:0 8px 24px rgba(0,0,0,.12) }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);font:16px/1.4 system-ui,Segoe UI,Arial}
+    .desktop-only,.mobile-only{display:none}
+    .app{position:fixed; inset:0; display:grid}
+    .map{position:absolute; inset:0; z-index:1}
+    /* Viktigt: ge kartan höjd oavsett! */
+    #map{height:100vh;width:100vw}
 
-*{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;background:var(--bg);font:16px/1.4 Calibri,system-ui,Segoe UI,Arial}
+    .app-header{position:fixed;top:0;left:0;right:0;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--surface);box-shadow:var(--shadow);z-index:10}
+    .top-menu{display:flex;gap:8px}
+    .btn{border:0;background:var(--olive);color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:600}
 
-/* Hjälpklasser för respons */
-.desktop-only,.mobile-only{display:none}
-
-/* App-layout */
-.app{position:fixed; inset:0; display:grid;}
-.map{position:absolute; inset:0; z-index:1}
-/* failsafe så kartan alltid syns, även om någon container missar höjd */
-#map{height:100vh; width:100vw}
-
-/* Desktop header */
-.app-header{
-  position:fixed; top:0; left:0; right:0; height:64px;
-  display:flex; align-items:center; justify-content:space-between;
-  padding:0 16px; background:var(--surface); box-shadow:var(--shadow); z-index:10;
-}
-.app-header .brand{display:flex; align-items:center; gap:10px}
-.logo-dot{width:14px; height:14px; border-radius:50%; background:var(--olive); display:inline-block}
-.app-header h1{margin:0; font-size:18px; color:var(--slate)}
-.top-menu{display:flex; gap:8px}
-.btn{
-  border:0; background:var(--olive); color:#fff; padding:10px 14px; border-radius:10px;
-  cursor:pointer; font-weight:600; letter-spacing:.2px;
-}
-.btn:hover{filter:brightness(1.05)}
-
-/* Desktop sidopanel */
-.side-panel{
-  position:fixed; top:72px; right:16px; width:380px; max-height:calc(100vh - 88px);
-  background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow);
-  padding:12px; overflow:auto; z-index:9;
-}
-.side-header{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 4px 8px}
-.side-header h2{margin:0; font-size:18px; color:var(--slate)}
-.icon{border:0; background:#eef1f4; border-radius:10px; padding:8px 10px; cursor:pointer}
-.icon:hover{filter:brightness(1.05)}
-.side-content{padding:8px}
-
-/* Mobil docka */
-.mobile-dock{
-  position:fixed; left:0; right:0; bottom:0; height:64px; z-index:10;
-  background:var(--surface); box-shadow:0 -8px 24px rgba(0,0,0,.12);
-  display:flex; align-items:center; justify-content:space-around; gap:6px; padding:8px;
-}
-.dock-btn{
-  flex:1; height:48px; border:0; border-radius:12px; background:var(--olive); color:#fff; font-weight:700;
-}
-
-/* Mobil sheet */
-.sheet{
-  position:fixed; left:0; right:0; bottom:-65vh; height:65vh; z-index:11;
-  background:var(--surface); border-top-left-radius:18px; border-top-right-radius:18px;
-  box-shadow:0 -16px 40px rgba(0,0,0,.2); transition:bottom .25s ease;
-  display:flex; flex-direction:column;
-}
-.sheet.open{bottom:64px}
-.sheet-handle{
-  align-self:center; width:64px; height:6px; border-radius:6px; background:#cfd6dc; margin-top:8px;
-}
-.sheet-header{display:flex; align-items:center; justify-content:space-between; padding:10px 12px}
-.sheet-header h3{margin:0; font-size:18px; color:var(--slate)}
-.sheet-body{padding:8px 12px; overflow:auto}
-
-/* Mobil HUD + bottbar */
-.hud{position:absolute; top:8px; left:0; right:0; display:flex; justify-content:center; gap:8px; pointer-events:none; z-index:20}
-.chip{pointer-events:auto; display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.85); border:1px solid rgba(0,0,0,.06); font-weight:600; font-size:13px}
-.bottbar{position:fixed; left:0; right:0; bottom:64px; padding:8px 10px; display:flex; gap:8px; z-index:12}
-.bottbar .btn{flex:1; height:48px; border-radius:12px; border:0; background:#e9eef3; color:#20323a; font-weight:700}
-.bottbar .btn.accent{background:var(--olive); color:#fff}
-
-/* Media breakpoints */
-@media (min-width:980px){
-  .desktop-only{display:block !important}
-  .mobile-only{display:none !important}
-}
-@media (max-width:979.98px){
-  .desktop-only{display:none !important}
-  .mobile-only{display:flex !important}
-}
-
-/* ===== Dark mode ===== */
-body.theme-dark{
-  --bg:#0b0f12; --surface:#11161b; --slate:#e8eef2; --olive:#62d59c; --shadow:0 6px 20px rgba(0,0,0,.45);
-}
-@media (prefers-color-scheme: dark){
-  :root{ --bg:#0b0f12; --surface:#11161b; --slate:#e8eef2; --olive:#62d59c; --shadow:0 6px 20px rgba(0,0,0,.45); }
-}
-body.theme-dark .side-panel{ background:#151a20; }
-@media (prefers-color-scheme: dark){
-  .chip{ background:rgba(22,26,31,.9); border-color:rgba(255,255,255,.08); color:#eaeff4; }
-  .bottbar .btn{ background:#1e2630; color:#eaeff4; }
-  .bottbar .btn.accent{ background:var(--olive); color:#0b1a12; }
-}
+    .side-panel{position:fixed;top:72px;right:16px;width:380px;max-height:calc(100vh - 88px);background:var(--surface);border-radius:14px;box-shadow:var(--shadow);padding:12px;overflow:auto;z-index:9}
+    .mobile-dock{position:fixed;left:0;right:0;bottom:0;height:64px;background:var(--surface);box-shadow:0 -8px 24px rgba(0,0,0,.12);display:flex;gap:6px;padding:8px;z-index:10}
+    .dock-btn{flex:1;height:48px;border:0;border-radius:12px;background:var(--olive);color:#fff;font-weight:700}
+    .hud{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:center;gap:8px;z-index:20}
+    .chip{background:rgba(255,255,255,.9);padding:6px 10px;border-radius:999px;border:1px solid rgba(0,0,0,.08)}
+    .sheet{position:fixed;left:0;right:0;bottom:-65vh;height:65vh;background:var(--surface);border-top-left-radius:18px;border-top-right-radius:18px;box-shadow:0 -16px 40px rgba(0,0,0,.2);transition:bottom .25s ease;display:flex;flex-direction:column;z-index:11}
+    .sheet.open{bottom:64px}
+    .bottbar{position:fixed;left:0;right:0;bottom:64px;padding:8px 10px;display:flex;gap:8px;z-index:12}
+    .bottbar .btn{flex:1;height:48px;border-radius:12px;border:0;background:#e9eef3;color:#20323a;font-weight:700}
+    .bottbar .btn.accent{background:var(--olive);color:#fff}
+    @media (min-width:980px){ .desktop-only{display:block!important} .mobile-only{display:none!important} }
+    @media (max-width:979.98px){ .desktop-only{display:none!important} .mobile-only{display:flex!important} }
+    /* enkel felbanner */
+    #err{position:fixed;left:50%;transform:translateX(-50%);top:72px;z-index:999;background:#fee;border:1px solid #f99;color:#900;padding:8px 12px;border-radius:8px;display:none}
   </style>
 </head>
 <body>
 
-<!-- ===== Desktop header ===== -->
+<div id="err"></div>
+
 <header class="app-header desktop-only">
-  <div class="brand">
-    <span class="logo-dot"></span>
-    <h1>FastFinder</h1>
-  </div>
+  <div class="brand"><strong>FastFinder</strong></div>
   <nav class="top-menu">
     <button class="btn" onclick="openPanel('play')">Spela</button>
     <button class="btn" onclick="openPanel('rooms')">Rum</button>
     <button class="btn" onclick="openPanel('leader')">Leaderboard</button>
     <button class="btn" onclick="openPanel('about')">Om</button>
-    <button class="btn" id="btnTheme" title="Byt tema">🌙</button>
   </nav>
 </header>
 
-<!-- ===== App ===== -->
 <main class="app">
   <div id="map" class="map"></div>
 
-  <!-- Desktop panel -->
   <aside class="side-panel desktop-only" id="sidePanel">
-    <div class="side-header">
-      <h2 id="panelTitle">Spela</h2>
-      <button class="icon" onclick="closePanel()" title="Stäng">✕</button>
+    <h3>Spela</h3>
+    <div style="margin:8px 0"><select id="selTrack" style="width:100%;height:40px"></select></div>
+    <div style="display:flex;gap:8px;margin:8px 0">
+      <input id="inpRounds" type="number" value="5" min="1" max="20" placeholder="Ronder" style="flex:1;height:40px;padding:0 8px">
+      <input id="inpTime" type="number" value="60" min="10" max="240" placeholder="Sek/rond" style="flex:1;height:40px;padding:0 8px">
     </div>
-    <div class="side-content" id="panelContent">
-      <div class="card" style="margin-bottom:10px">
-        <div style="font-weight:700;font-size:18px;margin-bottom:6px">Placera rätt:</div>
-        <div id="targetNameDesk" style="opacity:.9">–</div>
-      </div>
-      <div style="display:flex; gap:8px">
-        <button class="btn" id="btnClearDesk">Rensa markör</button>
-        <button class="btn" id="btnLocateDesk">Centrera</button>
-      </div>
-      <hr style="margin:12px 0; opacity:.3">
-      <p style="margin:0 0 6px; font-weight:700">Rum</p>
-      <div style="display:flex; gap:8px; margin-bottom:8px">
-        <select id="selTrack" style="flex:1; height:40px"></select>
-      </div>
-      <div style="display:flex; gap:8px; margin-bottom:8px">
-        <input id="inpRounds" type="number" value="5" min="1" max="20" placeholder="Ronder" style="flex:1; height:40px; padding:0 8px">
-        <input id="inpTime" type="number" value="60" min="10" max="240" placeholder="Sek/rond" style="flex:1; height:40px; padding:0 8px">
-      </div>
-      <div style="display:flex; gap:8px; margin-bottom:8px">
-        <button class="btn" id="btnHost">Skapa rum</button>
-      </div>
-      <div style="display:flex; gap:8px; margin-bottom:8px">
-        <input id="inpRoom" placeholder="Rumskod" style="flex:1; height:40px; padding:0 8px">
-      </div>
-      <div style="display:flex; gap:8px; margin-bottom:8px">
-        <input id="inpName" placeholder="Ditt namn" style="flex:1; height:40px; padding:0 8px">
-        <button class="btn" id="btnJoin">Gå med</button>
-      </div>
-      <div style="display:flex; gap:8px">
-        <input id="inpHostToken" placeholder="Host token (för Start)" style="flex:1; height:40px; padding:0 8px">
-        <button class="btn" id="btnStart">Starta</button>
-      </div>
-      <hr style="margin:12px 0; opacity:.3">
-      <table id="board" style="width:100%; border-collapse:collapse">
-        <thead><tr><th style="text-align:left; padding:6px 0">Spelare</th><th style="text-align:right; padding:6px 0">Poäng</th></tr></thead>
-        <tbody></tbody>
-      </table>
+    <div style="display:flex;gap:8px;margin:8px 0"><button class="btn" id="btnHost">Skapa rum</button></div>
+    <div style="display:flex;gap:8px;margin:8px 0"><input id="inpRoom" placeholder="Rumskod" style="flex:1;height:40px;padding:0 8px"></div>
+    <div style="display:flex;gap:8px;margin:8px 0">
+      <input id="inpName" placeholder="Ditt namn" style="flex:1;height:40px;padding:0 8px">
+      <button class="btn" id="btnJoin">Gå med</button>
     </div>
+    <div style="display:flex;gap:8px;margin:8px 0">
+      <input id="inpHostToken" placeholder="Host token (för Start)" style="flex:1;height:40px;padding:0 8px">
+      <button class="btn" id="btnStart">Starta</button>
+    </div>
+    <hr>
+    <table id="board" style="width:100%"><thead><tr><th>Spelare</th><th>Poäng</th></tr></thead><tbody></tbody></table>
   </aside>
 
-  <!-- Mobil docka -->
   <div class="mobile-dock mobile-only">
     <button class="dock-btn" onclick="openSheet('play')">Spela</button>
     <button class="dock-btn" onclick="openSheet('leader')">Topplista</button>
@@ -186,60 +81,32 @@ body.theme-dark .side-panel{ background:#151a20; }
     <button class="dock-btn" onclick="openSheet('about')">Info</button>
   </div>
 
-  <!-- Mobil HUD -->
   <div class="hud mobile-only">
     <div class="chip">🗓️ <span id="hudRound">Rond –</span></div>
     <div class="chip">⏱ <span id="hudTimer">– s</span></div>
     <div class="chip">⭐ <span id="hudScore">0 p</span></div>
   </div>
 
-  <!-- Mobil sheet -->
   <section class="sheet mobile-only" id="mSheet">
-    <div class="sheet-handle" onclick="toggleSheet()"></div>
-    <div class="sheet-header">
-      <h3 id="sheetTitle">Spela</h3>
-      <button class="icon" onclick="closeSheet()">✕</button>
-    </div>
-    <div class="sheet-body" id="sheetBody">
-      <div class="card" style="margin-bottom:10px">
-        <div style="font-weight:700;font-size:18px;margin-bottom:6px">Placera rätt:</div>
-        <div id="targetName" style="opacity:.9">–</div>
+    <div style="padding:10px 12px">
+      <div style="margin:8px 0"><select id="selTrackM" style="width:100%;height:40px"></select></div>
+      <div style="display:flex;gap:8px;margin:8px 0">
+        <input id="inpRoundsM" type="number" value="5" min="1" max="20" placeholder="Ronder" style="flex:1;height:40px;padding:0 8px">
+        <input id="inpTimeM" type="number" value="60" min="10" max="240" placeholder="Sek/rond" style="flex:1;height:40px;padding:0 8px">
       </div>
-      <div class="row" style="display:flex; gap:8px">
-        <button class="btn" id="btnClear">Rensa markör</button>
-        <button class="btn" id="btnLocate">Centrera</button>
-      </div>
-      <hr style="margin:12px 0; opacity:.3">
-      <div class="row" style="display:flex; gap:8px; margin-bottom:8px">
-        <select id="selTrackM" style="flex:1; height:40px"></select>
-      </div>
-      <div class="row" style="display:flex; gap:8px; margin-bottom:8px">
-        <input id="inpRoundsM" type="number" value="5" min="1" max="20" placeholder="Ronder" style="flex:1; height:40px; padding:0 8px">
-        <input id="inpTimeM" type="number" value="60" min="10" max="240" placeholder="Sek/rond" style="flex:1; height:40px; padding:0 8px">
-      </div>
-      <div class="row" style="display:flex; gap:8px; margin-bottom:8px">
-        <button class="btn" id="btnHostM">Skapa rum</button>
-      </div>
-      <div class="row" style="display:flex; gap:8px; margin-bottom:8px">
-        <input id="inpRoomM" placeholder="Rumskod" style="flex:1; height:40px; padding:0 8px">
-      </div>
-      <div class="row" style="display:flex; gap:8px; margin-bottom:8px">
-        <input id="inpNameM" placeholder="Ditt namn" style="flex:1; height:40px; padding:0 8px">
+      <div style="display:flex;gap:8px;margin:8px 0"><button class="btn" id="btnHostM">Skapa rum</button></div>
+      <div style="display:flex;gap:8px;margin:8px 0"><input id="inpRoomM" placeholder="Rumskod" style="flex:1;height:40px;padding:0 8px"></div>
+      <div style="display:flex;gap:8px;margin:8px 0">
+        <input id="inpNameM" placeholder="Ditt namn" style="flex:1;height:40px;padding:0 8px">
         <button class="btn" id="btnJoinM">Gå med</button>
       </div>
-      <div class="row" style="display:flex; gap:8px">
-        <input id="inpHostTokenM" placeholder="Host token (för Start)" style="flex:1; height:40px; padding:0 8px">
+      <div style="display:flex;gap:8px;margin:8px 0">
+        <input id="inpHostTokenM" placeholder="Host token (för Start)" style="flex:1;height:40px;padding:0 8px">
         <button class="btn" id="btnStartM">Starta</button>
       </div>
-      <hr style="margin:12px 0; opacity:.3">
-      <table id="boardM" style="width:100%; border-collapse:collapse">
-        <thead><tr><th style="text-align:left; padding:6px 0">Spelare</th><th style="text-align:right; padding:6px 0">Poäng</th></tr></thead>
-        <tbody></tbody>
-      </table>
     </div>
   </section>
 
-  <!-- Mobil bottbar -->
   <div class="bottbar mobile-only">
     <button class="btn" id="btnHint">Ledtråd</button>
     <button class="btn accent" id="btnGuess">Lås gissning</button>
@@ -248,215 +115,147 @@ body.theme-dark .side-panel{ background:#151a20; }
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-/* ===== API-bas (ändra om fronten körs från annan domän) ===== */
-const API_BASE = ""; // t.ex. "https://fastfinder-dcnk.onrender.com"
+/* =================== Helper =================== */
+const API_BASE = "https://fastfinder-dcnk.onrender.com";  // kör fronten var du vill
 const api = (p) => (API_BASE || "") + p;
 function wsURL(){
   if (API_BASE) return (API_BASE.startsWith("https") ? "wss://" : "ws://") + new URL(API_BASE).host + "/ws";
   return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws';
 }
+const $ = id => document.getElementById(id);
+function showErr(msg){ const e=$('err'); e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 6000); }
 
-/* ===== Tema-hantering ===== */
-const THEME_KEY = 'ff_theme';
-function getSystemPrefersDark(){ return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
-function getSavedTheme(){ return localStorage.getItem(THEME_KEY); }
-function currentTheme(){ const s=getSavedTheme(); return (s==='light'||s==='dark')?s:(getSystemPrefersDark()?'dark':'light'); }
-function applyTheme(t){
-  document.body.classList.toggle('theme-dark', t==='dark');
-  const btn = document.getElementById('btnTheme'); if(btn) btn.textContent = t==='dark' ? '☀️' : '🌙';
-  switchBaseLayer(t);
+/* =================== Leaflet först =================== */
+let map;
+try{
+  map = L.map('map', { zoomControl:false }).setView([59.334, 18.0667], 13);
+  const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OpenStreetMap'});
+  light.addTo(map);
+  // ibland behövs invalidateSize när containrar är fixed
+  window.addEventListener('load', ()=> setTimeout(()=> map.invalidateSize(), 50));
+}catch(e){
+  showErr('Kunde inte initiera kartan: '+e.message);
 }
-function toggleTheme(){ const next = currentTheme()==='dark'?'light':'dark'; localStorage.setItem(THEME_KEY,next); applyTheme(next); }
-applyTheme(currentTheme());
-if (document.getElementById('btnTheme')) document.getElementById('btnTheme').onclick = toggleTheme;
-if (window.matchMedia){
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e=>{
-    if (!getSavedTheme()) applyTheme(e.matches ? 'dark' : 'light');
+
+/* =================== Spel-data helpers =================== */
+function setBoard(tbodyEl, items){
+  tbodyEl.innerHTML = "";
+  (items||[]).forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.name}</td><td style="text-align:right">${r.score_total}</td>`;
+    tbodyEl.appendChild(tr);
   });
 }
 
-/* ===== Leaflet + baslager ===== */
-const map = L.map('map', { zoomControl:false }).setView([59.334, 18.0667], 13);
-const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OpenStreetMap'});
-const darkTiles  = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19, attribution:'© OpenStreetMap, © CARTO'});
-let currentBase=null;
-function switchBaseLayer(theme){
-  const desired = theme==='dark' ? darkTiles : lightTiles;
-  if(currentBase===desired) return;
-  if(currentBase) map.removeLayer(currentBase);
-  desired.addTo(map); currentBase=desired;
+/* =================== Tracks =================== */
+function uniqueOrderedTracks(js){
+  if(!js || !Array.isArray(js.tracks)) return [];
+  const prefer = ["Stockholm","Malmö","Göteborg"];
+  const set = new Map();
+  js.tracks.forEach(t=>{ if(t) set.set(String(t).toLowerCase(), t); });
+  const arr = [...set.values()];
+  const first = prefer.filter(p=> arr.includes(p));
+  const rest = arr.filter(x=> !first.includes(x)).sort();
+  return [...first, ...rest];
 }
-switchBaseLayer(currentTheme());
-// säkra att kartan målas när sidan är klar
-window.addEventListener('load', ()=> setTimeout(()=> map.invalidateSize(), 50));
+async function loadTracks(){
+  try{
+    const r = await fetch(api('/api/tracks'));
+    if(!r.ok) throw new Error(`tracks ${r.status}`);
+    const js = await r.json();
+    const tracks = uniqueOrderedTracks(js);
+    if(!tracks.length){ showErr('Inga banor hittades. Har du lagt CSV i /data?'); return; }
+    // desktop
+    const sel = $("selTrack"); sel.innerHTML="";
+    tracks.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`; sel.appendChild(o); });
+    // mobil
+    const selM = $("selTrackM"); selM.innerHTML="";
+    tracks.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`; selM.appendChild(o); });
+  }catch(e){
+    showErr('Kunde inte ladda banor: '+e.message);
+    console.warn(e);
+  }
+}
+loadTracks();
 
-let youMarker=null, targetMarker=null;
+/* =================== WS & knappar =================== */
+let ws=null, roomId=null, hostToken=null, timer=null, youMarker=null, targetMarker=null;
+
 map.on('click', e=>{
   if(!ws){ return alert('Anslut ett rum först.'); }
   if(youMarker) map.removeLayer(youMarker);
   youMarker = L.marker(e.latlng).addTo(map).bindPopup('Din gissning').openPopup();
 });
 
-/* ===== Helpers ===== */
-const $ = id => document.getElementById(id);
-function setBoard(tbodyEl, items){
-  tbodyEl.innerHTML = "";
-  (items||[]).forEach(r=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="text-align:left">${r.name}</td><td style="text-align:right">${r.score_total}</td>`;
-    tbodyEl.appendChild(tr);
-  });
+function startTimer(sec){
+  $('hudTimer').textContent = sec + ' s';
+  clearInterval(timer);
+  timer = setInterval(()=>{ sec=Math.max(0,sec-1); $('hudTimer').textContent = sec+' s'; if(sec===0) clearInterval(timer); }, 1000);
 }
 
-/* ===== Tracks (robust) ===== */
-function uniqueOrderedTracks(js){
-  if(!js || !Array.isArray(js.tracks)) return [];
-  const prefer = ["Stockholm","Malmö","Göteborg"];
-  const set = new Map(); // case-insensitive unik
-  js.tracks.forEach(t=>{ if(t) set.set(String(t).toLowerCase(), t); });
-  const arr = [...set.values()];
-  const byPref = prefer.filter(p=> arr.includes(p));
-  const rest = arr.filter(x=> !byPref.includes(x)).sort();
-  return [...byPref, ...rest];
-}
-async function loadTracks(){
-  try {
-    const r = await fetch(api('/api/tracks'));
-    if(!r.ok) throw new Error(await r.text());
-    const js = await r.json();
-    const tracks = uniqueOrderedTracks(js);
-    // desktop
-    const sel = $("selTrack"); sel.innerHTML="";
-    tracks.forEach(t=>{
-      const o=document.createElement('option');
-      o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`;
-      sel.appendChild(o);
-    });
-    // mobil
-    const selM = $("selTrackM"); selM.innerHTML="";
-    tracks.forEach(t=>{
-      const o=document.createElement('option');
-      o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`;
-      selM.appendChild(o);
-    });
-  } catch(e){
-    console.warn("Kunde inte ladda tracks:", e);
-  }
-}
-loadTracks();
-
-/* ===== WS & rum ===== */
-let ws=null, roomId=null, hostToken=null, timer=null;
 $("btnHost").onclick = async ()=>{
-  const track = $("selTrack").value, rounds=+$("inpRounds").value, tl=+$("inpTime").value;
   try{
+    const track = $("selTrack").value, rounds=+$("inpRounds").value, tl=+$("inpTime").value;
     const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
     if(!r.ok) throw new Error(await r.text());
     const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
     $("inpRoom").value=roomId; $("inpHostToken").value=hostToken;
-    alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
-  }catch(err){ alert(err); }
-};
-$("btnHostM").onclick = async ()=>{
-  const track = $("selTrackM").value, rounds=+$("inpRoundsM").value, tl=+$("inpTimeM").value;
-  try{
-    const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
-    if(!r.ok) throw new Error(await r.text());
-    const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
-    $("inpRoomM").value=roomId; $("inpHostTokenM").value=hostToken;
-    alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
-  }catch(err){ alert(err); }
+    alert(`Rum skapat: ${roomId}`);
+  }catch(e){ showErr('Skapa rum: '+e.message); }
 };
 
 $("btnJoin").onclick = ()=> joinRoom($("inpRoom").value.trim(), ($("inpName").value||"Spelare").trim());
-$("btnJoinM").onclick = ()=> joinRoom($("inpRoomM").value.trim(), ($("inpNameM").value||"Spelare").trim());
+$("btnStart").onclick = ()=> startGame($("inpHostToken").value.trim() || hostToken);
+
 function joinRoom(rid,nm){
-  if(!rid) return alert('Ange rumskod.');
+  if(!rid) return showErr('Ange rumskod.');
   ws = new WebSocket(wsURL());
   ws.onopen=()=> ws.send(JSON.stringify({type:"join", room_id:rid, name:nm}));
   ws.onmessage=ev=> onWS(JSON.parse(ev.data));
-  ws.onclose=()=> stopTimer();
-  roomId=rid;
+  ws.onerror = ev => showErr('WebSocket-fel (se Console).');
 }
-$("btnStart").onclick  = ()=> startGame($("inpHostToken").value.trim() || hostToken);
-$("btnStartM").onclick = ()=> startGame($("inpHostTokenM").value.trim() || hostToken);
+
 function startGame(tok){
-  if(!ws) return alert('Anslut först.');
-  if(!tok) return alert('Host token saknas.');
+  if(!ws) return showErr('Anslut först.');
+  if(!tok) return showErr('Host token saknas.');
   ws.send(JSON.stringify({type:"start", host_token:tok}));
 }
+
 $("btnGuess").onclick = ()=>{
-  if(!ws) return alert('Anslut först.');
-  if(!youMarker) return alert('Klicka på kartan först.');
+  if(!ws) return showErr('Anslut först.');
+  if(!youMarker) return showErr('Klicka på kartan först.');
   const {lat,lng}=youMarker.getLatLng();
   ws.send(JSON.stringify({type:"guess", lat:lat, lon:lng}));
 };
-$("btnLocate").onclick = ()=> map.setView([59.334, 18.0667], 13);
-$("btnLocateDesk").onclick = ()=> map.setView([59.334, 18.0667], 13);
-$("btnClear").onclick = ()=> { if(youMarker){ map.removeLayer(youMarker); youMarker=null; } };
-$("btnClearDesk").onclick = ()=> { if(youMarker){ map.removeLayer(youMarker); youMarker=null; } };
-$("btnHint").onclick = ()=> alert('Ledtråd…');
 
-/* ===== WS events ===== */
 function onWS(msg){
   if(msg.type==="room_state"){
     setBoard($("board").querySelector("tbody"), msg.players);
-    setBoard($("boardM").querySelector("tbody"), msg.players);
   } else if(msg.type==="round_start"){
-    $("targetName").textContent = msg.name;
-    $("targetNameDesk").textContent = msg.name;
-    $("hudRound").textContent = `Rond ${msg.round_index+1}/${$("inpRounds").value||'?'}`;
+    $('hudRound').textContent = `Rond ${msg.round_index+1}`;
     startTimer(msg.time_limit);
     if(targetMarker){ map.removeLayer(targetMarker); targetMarker=null; }
     if(youMarker){ map.removeLayer(youMarker); youMarker=null; }
   } else if(msg.type==="guess_result"){
-    stopTimer();
+    clearInterval(timer);
     if(targetMarker) map.removeLayer(targetMarker);
     targetMarker = L.circleMarker([msg.target.lat, msg.target.lon], {radius:8}).addTo(map).bindPopup('Rätt plats');
     map.panTo([msg.target.lat, msg.target.lon]);
     setBoard($("board").querySelector("tbody"), msg.leaderboard);
-    setBoard($("boardM").querySelector("tbody"), msg.leaderboard);
-    $("hudScore").textContent = (msg.leaderboard.find(x=>x.name===($("inpName").value||$("inpNameM").value||"Spelare"))?.score_total || 0) + " p";
-    const m = Math.round(msg.you.dist), s = msg.you.score;
-    alert(`Din gissning: ${m} m från rätt plats → ${s} p`);
   } else if(msg.type==="game_over"){
-    stopTimer();
+    clearInterval(timer);
     setBoard($("board").querySelector("tbody"), msg.leaderboard);
-    setBoard($("boardM").querySelector("tbody"), msg.leaderboard);
     alert("Spelet är slut! 🎉");
   } else if(msg.type==="error"){
-    alert(msg.error);
+    showErr(msg.error);
   }
 }
 
-/* ===== Timer (mobil HUD) ===== */
-function startTimer(sec){
-  $("hudTimer").textContent = sec + " s";
-  stopTimer();
-  timer = setInterval(()=>{ sec=Math.max(0,sec-1); $("hudTimer").textContent = sec + " s"; if(sec===0) stopTimer(); },1000);
-}
-function stopTimer(){ if(timer){ clearInterval(timer); timer=null; } }
-
-/* ===== Desktop panel toggles ===== */
-function openPanel(which){
-  $("panelTitle").textContent =
-    which==='leader' ? 'Leaderboard' :
-    which==='rooms'  ? 'Rum' :
-    which==='about'  ? 'Om' : 'Spela';
-  $("sidePanel").style.display = 'block';
-}
-function closePanel(){ $("sidePanel").style.display = 'none'; }
-
-/* ===== Mobil sheet toggles ===== */
-function openSheet(which){
-  $("sheetTitle").textContent =
-    which==='leader' ? 'Topplista' :
-    which==='rooms'  ? 'Rum' :
-    which==='about'  ? 'Info' : 'Spela';
-  $("mSheet").classList.add('open');
-}
-function closeSheet(){ $("mSheet").classList.remove('open'); }
-function toggleSheet(){ $("mSheet").classList.toggle('open'); }
+/* enkla panel/sheet toggles */
+function openPanel(){ $('sidePanel').style.display='block' }
+function closePanel(){ $('sidePanel').style.display='none' }
+function openSheet(){ $('mSheet').classList.add('open') }
+function closeSheet(){ $('mSheet').classList.remove('open') }
 </script>
 </body>
 </html>
