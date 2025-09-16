@@ -23,6 +23,8 @@ body{margin:0;background:var(--bg);font:16px/1.4 Calibri,system-ui,Segoe UI,Aria
 /* App-layout */
 .app{position:fixed; inset:0; display:grid;}
 .map{position:absolute; inset:0; z-index:1}
+/* failsafe så kartan alltid syns, även om någon container missar höjd */
+#map{height:100vh; width:100vw}
 
 /* Desktop header */
 .app-header{
@@ -246,6 +248,14 @@ body.theme-dark .side-panel{ background:#151a20; }
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+/* ===== API-bas (ändra om fronten körs från annan domän) ===== */
+const API_BASE = ""; // t.ex. "https://fastfinder-dcnk.onrender.com"
+const api = (p) => (API_BASE || "") + p;
+function wsURL(){
+  if (API_BASE) return (API_BASE.startsWith("https") ? "wss://" : "ws://") + new URL(API_BASE).host + "/ws";
+  return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws';
+}
+
 /* ===== Tema-hantering ===== */
 const THEME_KEY = 'ff_theme';
 function getSystemPrefersDark(){ return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
@@ -277,6 +287,8 @@ function switchBaseLayer(theme){
   desired.addTo(map); currentBase=desired;
 }
 switchBaseLayer(currentTheme());
+// säkra att kartan målas när sidan är klar
+window.addEventListener('load', ()=> setTimeout(()=> map.invalidateSize(), 50));
 
 let youMarker=null, targetMarker=null;
 map.on('click', e=>{
@@ -296,37 +308,64 @@ function setBoard(tbodyEl, items){
   });
 }
 
-/* ===== Tracks ===== */
+/* ===== Tracks (robust) ===== */
+function uniqueOrderedTracks(js){
+  if(!js || !Array.isArray(js.tracks)) return [];
+  const prefer = ["Stockholm","Malmö","Göteborg"];
+  const set = new Map(); // case-insensitive unik
+  js.tracks.forEach(t=>{ if(t) set.set(String(t).toLowerCase(), t); });
+  const arr = [...set.values()];
+  const byPref = prefer.filter(p=> arr.includes(p));
+  const rest = arr.filter(x=> !byPref.includes(x)).sort();
+  return [...byPref, ...rest];
+}
 async function loadTracks(){
-  const r = await fetch('/api/tracks'); const js = await r.json();
-  // desktop
-  const sel = $("selTrack"); sel.innerHTML="";
-  js.tracks.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=`${t} (${js.counts[t]})`; sel.appendChild(o); });
-  // mobil
-  const selM = $("selTrackM"); selM.innerHTML="";
-  js.tracks.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=`${t} (${js.counts[t]})`; selM.appendChild(o); });
+  try {
+    const r = await fetch(api('/api/tracks'));
+    if(!r.ok) throw new Error(await r.text());
+    const js = await r.json();
+    const tracks = uniqueOrderedTracks(js);
+    // desktop
+    const sel = $("selTrack"); sel.innerHTML="";
+    tracks.forEach(t=>{
+      const o=document.createElement('option');
+      o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`;
+      sel.appendChild(o);
+    });
+    // mobil
+    const selM = $("selTrackM"); selM.innerHTML="";
+    tracks.forEach(t=>{
+      const o=document.createElement('option');
+      o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`;
+      selM.appendChild(o);
+    });
+  } catch(e){
+    console.warn("Kunde inte ladda tracks:", e);
+  }
 }
 loadTracks();
 
 /* ===== WS & rum ===== */
 let ws=null, roomId=null, hostToken=null, timer=null;
-function wsURL(){ return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws'; }
-
 $("btnHost").onclick = async ()=>{
   const track = $("selTrack").value, rounds=+$("inpRounds").value, tl=+$("inpTime").value;
-  const r = await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
-  if(!r.ok) return alert(await r.text());
-  const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
-  $("inpRoom").value=roomId; $("inpHostToken").value=hostToken;
-  alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
+  try{
+    const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
+    if(!r.ok) throw new Error(await r.text());
+    const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
+    $("inpRoom").value=roomId; $("inpHostToken").value=hostToken;
+    alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
+  }catch(err){ alert(err); }
 };
 $("btnHostM").onclick = async ()=>{
   const track = $("selTrackM").value, rounds=+$("inpRoundsM").value, tl=+$("inpTimeM").value;
-  const r = await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
-  if(!r.ok) return alert(await r.text());
-  const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
-  $("inpRoomM").value=roomId; $("inpHostTokenM").value=hostToken;
-  alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
+  try{
+    const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
+    if(!r.ok) throw new Error(await r.text());
+    const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
+    $("inpRoomM").value=roomId; $("inpHostTokenM").value=hostToken;
+    alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
+  }catch(err){ alert(err); }
 };
 
 $("btnJoin").onclick = ()=> joinRoom($("inpRoom").value.trim(), ($("inpName").value||"Spelare").trim());
