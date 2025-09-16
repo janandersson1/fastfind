@@ -125,6 +125,17 @@ def list_tracks() -> List[str]:
     ordered = [t for t in prefer if t in have] + [t for t in have if t not in prefer]
     return ordered
 
+def list_tracks() -> List[str]:
+    prefer = ["Stockholm", "Malmö", "Göteborg"]
+    have = sorted({p["city"] for p in PLACES})
+    ordered = [t for t in prefer if t in have] + [t for t in have if t not in prefer]
+    return ordered
+
+def places_for_track(track: str) -> List[dict]:
+    # <--- DENNA SAKNAS HOS DIG
+    return [p for p in PLACES if p.get("city","").lower() == track.lower()]
+
+
 
 # ---------- Game logic ----------
 def haversine_m(lat1, lon1, lat2, lon2) -> float:
