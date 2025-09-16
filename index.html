@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>FastFinder – Multiplayer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root{
+      --bg:#0b0f12; --glass:rgba(18,22,27,.55); --glass-strong:rgba(18,22,27,.70);
+      --stroke:rgba(255,255,255,.10); --text:#f6f7f9; --muted:#cfd5db;
+      --accent:#62d59c; --accent-press:#49c688; --chip-bg:rgba(255,255,255,.12);
+      --radius:14px; --shadow:0 6px 20px rgba(0,0,0,.35);
+      --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+    }
+    html,body{height:100%;margin:0;background:#000;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial}
+    #app{position:relative;height:100%;overflow:hidden}
+    #map{position:absolute;inset:0}
+    .hud{position:absolute;top:calc(8px + var(--safe-t));left:0;right:0;display:flex;justify-content:center;gap:8px;pointer-events:none;z-index:20}
+    .chip{pointer-events:auto;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--chip-bg);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--stroke);font-weight:600;font-size:13px}
+    .sheet{position:absolute;left:0;right:0;bottom:0;height:70%;translate:0 calc(55% + var(--safe-b));z-index:30;display:flex;flex-direction:column}
+    .sheet-outer{margin:0 8px calc(8px + var(--safe-b));background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--stroke);box-shadow:var(--shadow);border-radius:calc(var(--radius) + 8px);overflow:hidden}
+    .grabber{display:flex;justify-content:center;align-items:center;padding:10px 0 6px;cursor:grab}
+    .grabber::before{content:"";width:40px;height:4px;border-radius:999px;background:rgba(255,255,255,.35)}
+    .tabs{display:flex;gap:6px;padding:0 10px 10px}
+    .tab{flex:1;text-align:center;padding:10px;font-weight:600;font-size:14px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--stroke);user-select:none}
+    .tab.active{background:rgba(255,255,255,.14)}
+    .sheet-body{padding:8px 12px 12px;max-height:45vh;overflow:auto}
+    .row{display:flex;gap:8px;align-items:center}
+    .col{display:flex;flex-direction:column;gap:8px}
+    .field,.button{height:48px;border-radius:12px;border:1px solid var(--stroke);background:rgba(255,255,255,.06);color:var(--text);padding:0 12px;font-size:16px}
+    .button.primary{background:var(--accent);border-color:transparent;color:#0b1a12;font-weight:700}
+    .button.primary:active{background:var(--accent-press)}
+    .bottbar{position:absolute;left:0;right:0;bottom:0;padding:8px 10px calc(8px + var(--safe-b));display:flex;gap:8px;z-index:40;pointer-events:none}
+    .bottbar .btn{pointer-events:auto;flex:1;height:48px;border-radius:12px;border:1px solid var(--stroke);background:var(--glass-strong);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:var(--text);font-weight:700}
+    .btn.accent{background:var(--accent);color:#0b1a12;border-color:transparent}
+    .card{border:1px solid var(--stroke);border-radius:12px;padding:12px;background:rgba(255,255,255,.04)}
+    table{width:100%;border-collapse:collapse} th,td{padding:10px 8px;border-bottom:1px solid var(--stroke);font-size:15px} th{text-align:left;color:var(--muted);font-weight:600}
+    @media (min-width:700px){ .sheet-body{max-height:50vh} }
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+
+  <!-- HUD -->
+  <div class="hud">
+    <div class="chip">🗓️ <span id="hudRound">Rond –</span></div>
+    <div class="chip">⏱ <span id="hudTimer">– s</span></div>
+    <div class="chip">⭐ <span id="hudScore">0 p</span></div>
+  </div>
+
+  <!-- Bottbar -->
+  <div class="bottbar">
+    <button class="btn" id="btnHint">Ledtråd</button>
+    <button class="btn accent" id="btnGuess">Lås gissning</button>
+    <button class="btn" id="btnLocate">Centrera</button>
+  </div>
+
+  <!-- Draggable sheet -->
+  <div class="sheet" id="sheet">
+    <div class="sheet-outer">
+      <div class="grabber" id="grab"></div>
+      <div class="tabs">
+        <div class="tab active" data-tab="game">Spel</div>
+        <div class="tab" data-tab="board">Leaderboard</div>
+        <div class="tab" data-tab="room">Rum</div>
+      </div>
+      <div class="sheet-body">
+        <!-- Spel -->
+        <div class="tabpane" id="pane-game">
+          <div class="card" style="margin-bottom:10px">
+            <div style="font-weight:700;font-size:18px;margin-bottom:6px">Placera rätt:</div>
+            <div id="targetName" style="opacity:.9">–</div>
+          </div>
+          <div class="row">
+            <button class="button" id="btnClear">Rensa markör</button>
+          </div>
+        </div>
+        <!-- Board -->
+        <div class="tabpane" id="pane-board" style="display:none">
+          <div class="card">
+            <table id="board"><thead><tr><th>Spelare</th><th>Poäng</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+        <!-- Rum -->
+        <div class="tabpane" id="pane-room" style="display:none">
+          <div class="col">
+            <div class="row">
+              <select class="field" id="selTrack"></select>
+            </div>
+            <div class="row">
+              <input class="field" id="inpRounds" type="number" value="5" min="1" max="20" placeholder="Ronder">
+              <input class="field" id="inpTime" type="number" value="60" min="10" max="240" placeholder="Sek/rond">
+            </div>
+            <div class="row">
+              <button class="button primary" id="btnHost">Skapa rum</button>
+            </div>
+            <div class="row">
+              <input class="field mono" id="inpRoom" placeholder="Rumskod">
+            </div>
+            <div class="row">
+              <input class="field" id="inpName" placeholder="Ditt namn">
+              <button class="button" id="btnJoin">Gå med</button>
+            </div>
+            <div class="row">
+              <input class="field mono" id="inpHostToken" placeholder="Host token (för Start)">
+              <button class="button" id="btnStart">Starta</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /sheet-outer -->
+  </div><!-- /sheet -->
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // === Leaflet karta ===
+  const map = L.map('map', { zoomControl:false }).setView([59.334, 18.0667], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OSM'}).addTo(map);
+  let youMarker=null, targetMarker=null;
+
+  map.on('click', e=>{
+    if(!ws){ return alert('Anslut ett rum först.'); }
+    if(youMarker) map.removeLayer(youMarker);
+    youMarker = L.marker(e.latlng).addTo(map).bindPopup('Din gissning').openPopup();
+  });
+
+  // === UI helpers ===
+  const $ = id => document.getElementById(id);
+  function setBoard(items){
+    const tb = $("board").querySelector("tbody"); tb.innerHTML="";
+    (items||[]).forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.name}</td><td>${r.score_total}</td>`;
+      tb.appendChild(tr);
+    });
+  }
+
+  // === Ladda banor ===
+  async function loadTracks(){
+    const r = await fetch('/api/tracks'); const js = await r.json();
+    const sel = $("selTrack"); sel.innerHTML="";
+    js.tracks.forEach(t=>{
+      const opt = document.createElement('option');
+      opt.value=t; opt.textContent=`${t} (${js.counts[t]})`;
+      sel.appendChild(opt);
+    });
+  }
+  loadTracks();
+
+  // === WS & rum-flöde ===
+  let ws=null, roomId=null, hostToken=null, timer=null;
+  function wsURL(){ return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws'; }
+
+  $("btnHost").onclick = async ()=>{
+    const track = $("selTrack").value, rounds = +$("inpRounds").value, tl = +$("inpTime").value;
+    const r = await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({track, rounds, time_limit: tl})});
+    if(!r.ok){ return alert(await r.text()); }
+    const js = await r.json();
+    roomId = js.room_id; hostToken = js.host_token;
+    $("inpRoom").value = roomId; $("inpHostToken").value = hostToken;
+    alert(`Rum skapat: ${roomId}\nDela koden med spelare.`);
+  };
+
+  $("btnJoin").onclick = ()=>{
+    const rid = $("inpRoom").value.trim();
+    const nm = ($("inpName").value || "Spelare").trim();
+    if(!rid){ return alert('Ange rumskod.'); }
+    ws = new WebSocket(wsURL());
+    ws.onopen    = ()=> ws.send(JSON.stringify({type:"join", room_id: rid, name: nm}));
+    ws.onmessage = ev => onWS(JSON.parse(ev.data));
+    ws.onclose   = ()=> stopTimer();
+    roomId = rid;
+  };
+
+  $("btnStart").onclick = ()=>{
+    if(!ws) return alert('Anslut först.');
+    const tok = $("inpHostToken").value.trim() || hostToken;
+    if(!tok) return alert('Host token saknas.');
+    ws.send(JSON.stringify({type:"start", host_token: tok}));
+  };
+
+  $("btnGuess").onclick = ()=>{
+    if(!ws) return alert('Anslut först.');
+    if(!youMarker) return alert('Klicka på kartan först.');
+    const {lat, lng} = youMarker.getLatLng();
+    ws.send(JSON.stringify({type:"guess", lat: lat, lon: lng}));
+  };
+
+  $("btnLocate").onclick = ()=> map.setView([59.334, 18.0667], 13);
+  $("btnClear").onclick  = ()=> { if(youMarker){ map.removeLayer(youMarker); youMarker=null; } };
+  $("btnHint").onclick   = ()=> alert('Ledtråd (byggs på servern om du vill visa t.ex. stadsdel/postnr).');
+
+  // === WS-händelser ===
+  function onWS(msg){
+    if(msg.type==="room_state"){
+      setBoard(msg.players);
+    }
+    else if(msg.type==="round_start"){
+      $("targetName").textContent = msg.name;
+      $("hudRound").textContent = `Rond ${msg.round_index+1}/${document.getElementById('inpRounds').value||'?'}`;
+      startTimer(msg.time_limit);
+      if(targetMarker){ map.removeLayer(targetMarker); targetMarker=null; }
+      if(youMarker){ map.removeLayer(youMarker); youMarker=null; }
+    }
+    else if(msg.type==="guess_result"){
+      stopTimer();
+      if(targetMarker) map.removeLayer(targetMarker);
+      targetMarker = L.circleMarker([msg.target.lat, msg.target.lon], {radius:8}).addTo(map).bindPopup('Rätt plats');
+      map.panTo([msg.target.lat, msg.target.lon]);
+      setBoard(msg.leaderboard);
+      $("hudScore").textContent = (msg.leaderboard.find(x=>x.name===($("inpName").value||"Spelare"))?.score_total || 0) + " p";
+      const m = Math.round(msg.you.dist), s = msg.you.score;
+      alert(`Din gissning: ${m} m från rätt plats → ${s} p`);
+    }
+    else if(msg.type==="game_over"){
+      stopTimer();
+      setBoard(msg.leaderboard);
+      alert("Spelet är slut! 🎉");
+    }
+    else if(msg.type==="error"){
+      alert(msg.error);
+    }
+  }
+
+  // === Timer HUD ===
+  function startTimer(sec){
+    $("hudTimer").textContent = sec + " s";
+    stopTimer();
+    timer = setInterval(()=>{
+      sec = Math.max(0, sec-1);
+      $("hudTimer").textContent = sec + " s";
+      if(sec===0) stopTimer();
+    }, 1000);
+  }
+  function stopTimer(){ if(timer){ clearInterval(timer); timer=null; } }
+
+  // === Tabs ===
+  const tabs = document.querySelectorAll('.tab');
+  const panes = { game: $('pane-game'), board: $('pane-board'), room: $('pane-room') };
+  tabs.forEach(t=>{
+    t.addEventListener('click', ()=>{
+      tabs.forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      Object.values(panes).forEach(p=>p.style.display='none');
+      panes[t.dataset.tab].style.display='block';
+    });
+  });
+
+  // === Drag sheet ===
+  (function(){
+    const sheet = $('sheet'), grab = $('grab');
+    const stops = ['55%','25%','0%']; let i=0, startY=0, dragging=false;
+    const apply = ()=> sheet.style.translate = `0 calc(${stops[i]} + env(safe-area-inset-bottom))`;
+    apply();
+    function nearest(dy){ if(dy<-40 && i<stops.length-1) i++; else if(dy>40 && i>0) i--; apply(); }
+    function start(y){ dragging=true; startY=y; document.body.style.touchAction='none'; }
+    function move(y){ if(!dragging) return; const dy=y-startY; sheet.style.transition='none'; sheet.style.translate=`0 calc(${stops[i]} + ${dy}px + env(safe-area-inset-bottom))`; }
+    function end(y){ if(!dragging) return; const dy=y-startY; sheet.style.transition='translate .2s ease'; nearest(dy); dragging=false; document.body.style.touchAction=''; }
+    grab.addEventListener('touchstart', e=>start(e.touches[0].clientY), {passive:true});
+    grab.addEventListener('touchmove',  e=>move(e.touches[0].clientY),  {passive:true});
+    grab.addEventListener('touchend',   e=>end(e.changedTouches[0].clientY));
+    grab.addEventListener('mousedown',  e=>start(e.clientY));
+    window.addEventListener('mousemove',e=>move(e.clientY));
+    window.addEventListener('mouseup',  e=>end(e.clientY));
+  })();
+</script>
+</body>
+</html>
