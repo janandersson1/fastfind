@@ -1,7 +1,7 @@
-import json, math, random, string, uuid, pathlib, csv
+import json, math, uuid, pathlib, csv
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -15,23 +15,36 @@ STATIC_DIR.mkdir(exist_ok=True)
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def root():
-    return FileResponse(STATIC_DIR / "index.html")
+    """Skicka index.html om den finns, annars en snäll fallback."""
+    idx = STATIC_DIR / "index.html"
+    if idx.exists():
+        return idx.read_text(encoding="utf-8")
+    return HTMLResponse(
+        """
+        <h1>FastFinder</h1>
+        <p><code>static/index.html</code> saknas i denna build.</p>
+        <ul>
+          <li>API-test: <a href="/api/ping">/api/ping</a></li>
+          <li>Banor: <a href="/api/tracks">/api/tracks</a></li>
+        </ul>
+        """,
+        status_code=200,
+    )
 
 # ---------- Data ----------
-def load_all_places():
+def load_all_places() -> List[dict]:
     """
-    Läser alla *.csv i /data enligt ditt schema:
+    Läser alla *.csv i /data enligt schema:
     id,display_name,alt_names,street,postnummer,ort,kommun,lan,lat,lon,svardighet
 
-    - Hanterar UTF-8 med/utan BOM
-    - Tillåter både kommatecken och semikolon som avskiljare
-    - Tillåter decimalkomma i lat/lon
-    - Sätter city från filnamnet: stockholm/malmo/goteborg -> Stockholm/Malmö/Göteborg
-    - Hoppar över rader utan giltiga koordinater
+    - UTF-8 (tål BOM)
+    - Delimiter , eller ;
+    - Decimalkomma i lat/lon
+    - Stad tas från filnamnet (normaliseras)
+    - Rader utan giltiga koordinater hoppas över
     """
-    import re
 
     def coerce_float(val):
         if val is None:
@@ -42,17 +55,18 @@ def load_all_places():
         s = s.replace(",", ".")
         return float(s)
 
-def city_from_stem(stem: str) -> str:
-    s = (stem or "").strip().lower()
-    # Hitta stad även om filnamnet har prefix/suffix (t.ex. "places_stockholm_v1")
-    if "stockholm" in s: return "Stockholm"
-    if "malmo" in s or "malmö" in s: return "Malmö"
-    if "goteborg" in s or "göteborg" in s: return "Göteborg"
-    # fallback: sista segmentet efter "_" med versal först
-    last = s.split("_")[-1]
-    return last[:1].upper() + last[1:]
+    def city_from_stem(stem: str) -> str:
+        s = (stem or "").strip().lower()
+        # Hitta stad även med prefix/suffix, t.ex. "places_stockholm_v1"
+        if "stockholm" in s: return "Stockholm"
+        if "malmo" in s or "malmö" in s: return "Malmö"
+        if "goteborg" in s or "göteborg" in s: return "Göteborg"
+        # fallback: sista segmentet efter "_" med versal först
+        last = s.split("_")[-1]
+        return last[:1].upper() + last[1:]
 
-    places = []
+    places: List[dict] = []
+
     for p in DATA_DIR.glob("*.csv"):
         try:
             with p.open("r", encoding="utf-8-sig", newline="") as f:
@@ -69,36 +83,34 @@ def city_from_stem(stem: str) -> str:
                 if not reader.fieldnames:
                     print(f"[ERROR] {p.name}: Saknar header.")
                     continue
-                # normalisera headrar
-                reader.fieldnames = [h.strip() for h in reader.fieldnames]
 
-                required = {"lat", "lon"}
-                missing = required - set(h.lower() for h in reader.fieldnames)
-                if missing:
-                    print(f"[WARN] {p.name}: saknar {missing} – försöker ändå om snarlika namn finns.")
+                # normalisera headrar (behåll originalstavar i nycklar)
+                reader.fieldnames = [h.strip() for h in reader.fieldnames]
 
                 skipped = 0
                 stem_city = city_from_stem(p.stem)
 
-                for i, row in enumerate(reader, start=2):  # start=2 pga header på rad 1
-                    # trimma blanksteg
-                    row = { (k.strip() if isinstance(k, str) else k): (v.strip() if isinstance(v, str) else v)
-                            for k, v in row.items() }
+                for i, row in enumerate(reader, start=2):  # radräkning (1=header)
+                    # trimma blanksteg i celler
+                    row = {
+                        (k.strip() if isinstance(k, str) else k):
+                        (v.strip() if isinstance(v, str) else v)
+                        for k, v in row.items()
+                    }
 
                     try:
                         lat = coerce_float(row.get("lat"))
                         lon = coerce_float(row.get("lon"))
                     except Exception as e:
                         skipped += 1
-                        # Visa kort orsak, ofta "" (tom sträng) eller decimalkomma fel
                         print(f"[WARN] Skippar {p.name} rad {i}: ogiltig lat/lon ({e}).")
                         continue
 
-                    # Fält enligt ditt schema + standardiserade fält
                     out = dict(row)
                     out["lat"] = lat
                     out["lon"] = lon
-                    out["city"] = row.get("city") or stem_city
+                    # tvinga normaliserad stad – undvik konstiga värden i CSV
+                    out["city"] = stem_city
                     out["display_name"] = row.get("display_name") or row.get("id") or "Okänt"
                     places.append(out)
 
@@ -112,43 +124,30 @@ def city_from_stem(stem: str) -> str:
 PLACES = load_all_places()
 print(f"[INFO] Totalt platser: {len(PLACES)}")
 if PLACES:
-    counts = {}
+    counts: Dict[str, int] = {}
     for p in PLACES:
         counts[p["city"]] = counts.get(p["city"], 0) + 1
-    print("[INFO] Banor:", ", ".join(f"{k} ({v})" for k,v in counts.items()))
-
-
+    print("[INFO] Banor:", ", ".join(f"{k} ({v})" for k, v in counts.items()))
 
 def list_tracks() -> List[str]:
-    # Stabil, snygg ordning om de finns
+    """Snygg ordning + unika."""
     prefer = ["Stockholm", "Malmö", "Göteborg"]
     have = sorted({p["city"] for p in PLACES})
-    # sortera så prefererade hamnar först
-    ordered = [t for t in prefer if t in have] + [t for t in have if t not in prefer]
-    return ordered
-
-def list_tracks() -> List[str]:
-    prefer = ["Stockholm", "Malmö", "Göteborg"]
-    have = sorted({p["city"] for p in PLACES})
-    ordered = [t for t in prefer if t in have] + [t for t in have if t not in prefer]
-    return ordered
+    return [t for t in prefer if t in have] + [t for t in have if t not in prefer]
 
 def places_for_track(track: str) -> List[dict]:
-    # <--- DENNA SAKNAS HOS DIG
-    return [p for p in PLACES if p.get("city","").lower() == track.lower()]
-
-
+    return [p for p in PLACES if p.get("city", "").lower() == track.lower()]
 
 # ---------- Game logic ----------
 def haversine_m(lat1, lon1, lat2, lon2) -> float:
     R = 6371000
-    from math import radians, sin, cos, atan2, sqrt
-    dlat = radians(lat2-lat1); dlon = radians(lon2-lon1)
+    from math import radians, sin, cos, atan2
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
     a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-    return 2*R*atan2(math.sqrt(a), math.sqrt(1-a))
+    return 2 * R * atan2(math.sqrt(a), math.sqrt(1 - a))
 
 def score_from_distance_m(d: float) -> int:
-    # 0–5000 m ger 5000–0 p linjärt (tweaka efter smak)
     MAX = 5000.0
     return int(round(MAX * max(0.0, 1.0 - d/5000.0)))
 
@@ -202,6 +201,10 @@ class Room:
 ROOMS: Dict[str, Room] = {}
 
 # ---------- REST ----------
+@app.get("/api/ping")
+def api_ping():
+    return {"ok": True, "tracks": len(list_tracks()), "places": len(PLACES)}
+
 @app.get("/api/tracks")
 def api_tracks():
     tracks = list_tracks()
@@ -219,7 +222,8 @@ def api_create_room(req: CreateRoomIn):
 @app.get("/api/room/{room_id}")
 def api_get_room(room_id: str):
     room = ROOMS.get(room_id)
-    if not room: raise HTTPException(404, "Rum saknas")
+    if not room:
+        raise HTTPException(404, "Rum saknas")
     return room.to_public()
 
 # ---------- WebSocket ----------
@@ -239,7 +243,8 @@ async def ws_endpoint(ws: WebSocket):
     player: Optional[Player] = None
 
     async def broadcast(payload: dict):
-        if not room: return
+        if not room:
+            return
         dead = []
         for pid, pl in list(room.players.items()):
             try:
@@ -271,11 +276,18 @@ async def ws_endpoint(ws: WebSocket):
                 room.state = "playing"
                 room.round_index = 0
                 room.current_target = room.targets[0]
-                for p in room.players.values(): p.score_total, p.last_guess = 0, None
-                await broadcast({"type":"round_start","round_index":0,"name":room.current_target["display_name"],"time_limit":room.time_limit})
+                for p in room.players.values():
+                    p.score_total, p.last_guess = 0, None
+                await broadcast({
+                    "type":"round_start",
+                    "round_index": 0,
+                    "name": room.current_target["display_name"],
+                    "time_limit": room.time_limit
+                })
 
             elif t == "guess":
-                if not (room and player and room.state=="playing" and room.current_target): continue
+                if not (room and player and room.state == "playing" and room.current_target):
+                    continue
                 lat = float(msg.get("lat")); lon = float(msg.get("lon"))
                 tgt = room.current_target
                 dist = haversine_m(lat, lon, tgt["lat"], tgt["lon"])
@@ -294,11 +306,12 @@ async def ws_endpoint(ws: WebSocket):
                         await pl.ws.send_text(json.dumps({
                             "type":"guess_result",
                             "you": pl.last_guess,
-                            "target":{"lat":tgt["lat"], "lon":tgt["lon"]},
+                            "target": {"lat":tgt["lat"], "lon":tgt["lon"]},
                             "leaderboard": lb
                         }))
                     # Reset per-rond
-                    for pl in room.players.values(): pl.last_guess = None
+                    for pl in room.players.values():
+                        pl.last_guess = None
                     # Nästa runda / game over
                     room.round_index += 1
                     if room.round_index >= room.rounds:
