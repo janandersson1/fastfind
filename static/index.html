@@ -13,7 +13,6 @@
     .desktop-only,.mobile-only{display:none}
     .app{position:fixed; inset:0; display:grid}
     .map{position:absolute; inset:0; z-index:1}
-    /* Viktigt: ge kartan höjd oavsett! */
     #map{height:100vh;width:100vw}
 
     .app-header{position:fixed;top:0;left:0;right:0;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--surface);box-shadow:var(--shadow);z-index:10}
@@ -32,7 +31,6 @@
     .bottbar .btn.accent{background:var(--olive);color:#fff}
     @media (min-width:980px){ .desktop-only{display:block!important} .mobile-only{display:none!important} }
     @media (max-width:979.98px){ .desktop-only{display:none!important} .mobile-only{display:flex!important} }
-    /* enkel felbanner */
     #err{position:fixed;left:50%;transform:translateX(-50%);top:72px;z-index:999;background:#fee;border:1px solid #f99;color:#900;padding:8px 12px;border-radius:8px;display:none}
   </style>
 </head>
@@ -66,10 +64,9 @@
       <input id="inpName" placeholder="Ditt namn" style="flex:1;height:40px;padding:0 8px">
       <button class="btn" id="btnJoin">Gå med</button>
     </div>
-<div style="display:flex; gap:8px">
-  <button class="btn" id="btnStart" style="display:none">Starta</button>
-</div>
-
+    <div style="display:flex; gap:8px">
+      <button class="btn" id="btnStart" style="display:none">Starta</button>
+    </div>
     <hr>
     <table id="board" style="width:100%"><thead><tr><th>Spelare</th><th>Poäng</th></tr></thead><tbody></tbody></table>
   </aside>
@@ -100,9 +97,9 @@
         <input id="inpNameM" placeholder="Ditt namn" style="flex:1;height:40px;padding:0 8px">
         <button class="btn" id="btnJoinM">Gå med</button>
       </div>
-<div class="row" style="display:flex; gap:8px">
-  <button class="btn" id="btnStartM" style="display:none">Starta</button>
-</div>
+      <div class="row" style="display:flex; gap:8px">
+        <button class="btn" id="btnStartM" style="display:none">Starta</button>
+      </div>
     </div>
   </section>
 
@@ -114,8 +111,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-/* =================== Helper =================== */
-const API_BASE = "https://fastfinder-dcnk.onrender.com";  // kör fronten var du vill
+/* ====== Helpers ====== */
+const API_BASE = "https://fastfinder-dcnk.onrender.com"; // ändra vid behov
 const api = (p) => (API_BASE || "") + p;
 function wsURL(){
   if (API_BASE) return (API_BASE.startsWith("https") ? "wss://" : "ws://") + new URL(API_BASE).host + "/ws";
@@ -124,19 +121,15 @@ function wsURL(){
 const $ = id => document.getElementById(id);
 function showErr(msg){ const e=$('err'); e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 6000); }
 
-/* =================== Leaflet först =================== */
-let map;
+/* ====== Karta ====== */
+let map, youMarker=null, targetMarker=null;
 try{
   map = L.map('map', { zoomControl:false }).setView([59.334, 18.0667], 13);
-  const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OpenStreetMap'});
-  light.addTo(map);
-  // ibland behövs invalidateSize när containrar är fixed
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OpenStreetMap'}).addTo(map);
   window.addEventListener('load', ()=> setTimeout(()=> map.invalidateSize(), 50));
-}catch(e){
-  showErr('Kunde inte initiera kartan: '+e.message);
-}
+}catch(e){ showErr('Kunde inte initiera kartan: '+e.message); }
 
-/* =================== Spel-data helpers =================== */
+/* ====== Scoreboard ====== */
 function setBoard(tbodyEl, items){
   tbodyEl.innerHTML = "";
   (items||[]).forEach(r=>{
@@ -146,7 +139,7 @@ function setBoard(tbodyEl, items){
   });
 }
 
-/* =================== Tracks =================== */
+/* ====== Tracks ====== */
 function uniqueOrderedTracks(js){
   if(!js || !Array.isArray(js.tracks)) return [];
   const prefer = ["Stockholm","Malmö","Göteborg"];
@@ -164,82 +157,97 @@ async function loadTracks(){
     const js = await r.json();
     const tracks = uniqueOrderedTracks(js);
     if(!tracks.length){ showErr('Inga banor hittades. Har du lagt CSV i /data?'); return; }
-    // desktop
     const sel = $("selTrack"); sel.innerHTML="";
     tracks.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`; sel.appendChild(o); });
-    // mobil
     const selM = $("selTrackM"); selM.innerHTML="";
     tracks.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=`${t} (${js.counts?.[t] ?? "?"})`; selM.appendChild(o); });
-  }catch(e){
-    showErr('Kunde inte ladda banor: '+e.message);
-    console.warn(e);
-  }
+  }catch(e){ showErr('Kunde inte ladda banor: '+e.message); }
 }
 loadTracks();
 
-/* =================== WS & knappar =================== */
-// ----- Host state -----
+/* ====== Host-hantering (utan att visa token) ====== */
 let ws = null, roomId = null, hostToken = null, timer = null;
 const LS_KEY = (rid) => `ff_host_token_${rid}`;
 
 function updateHostUI(){
   const isHost = !!hostToken && !!roomId;
-  const s1 = document.getElementById('btnStart');
-  const s2 = document.getElementById('btnStartM');
+  const s1 = $('btnStart'), s2 = $('btnStartM');
   if (s1) s1.style.display = isHost ? 'inline-block' : 'none';
   if (s2) s2.style.display = isHost ? 'inline-block' : 'none';
 }
 
+/* ====== Kartklick = gissning ====== */
 map.on('click', e=>{
   if(!ws){ return alert('Anslut ett rum först.'); }
   if(youMarker) map.removeLayer(youMarker);
   youMarker = L.marker(e.latlng).addTo(map).bindPopup('Din gissning').openPopup();
 });
 
+/* ====== Timer ====== */
 function startTimer(sec){
   $('hudTimer').textContent = sec + ' s';
   clearInterval(timer);
   timer = setInterval(()=>{ sec=Math.max(0,sec-1); $('hudTimer').textContent = sec+' s'; if(sec===0) clearInterval(timer); }, 1000);
 }
 
-$("btnHost").onclick = async ()=>{
+/* ====== Skapa rum (desktop/mobil) ====== */
+$('btnHost').onclick = async ()=>{
   try{
-    const track = $("selTrack").value, rounds=+$("inpRounds").value, tl=+$("inpTime").value;
+    const track = $('selTrack').value, rounds=+$('inpRounds').value, tl=+$('inpTime').value;
     const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
     if(!r.ok) throw new Error(await r.text());
-    const js = await r.json(); roomId=js.room_id; hostToken=js.host_token;
-    $("inpRoom").value=roomId; $("inpHostToken").value=hostToken;
+    const js = await r.json();
+    roomId = js.room_id; hostToken = js.host_token;
+    localStorage.setItem(LS_KEY(roomId), hostToken);
+    $('inpRoom').value = roomId;
     alert(`Rum skapat: ${roomId}`);
+    updateHostUI();
+  }catch(e){ showErr('Skapa rum: '+e.message); }
+};
+$('btnHostM').onclick = async ()=>{
+  try{
+    const track = $('selTrackM').value, rounds=+$('inpRoundsM').value, tl=+$('inpTimeM').value;
+    const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
+    if(!r.ok) throw new Error(await r.text());
+    const js = await r.json();
+    roomId = js.room_id; hostToken = js.host_token;
+    localStorage.setItem(LS_KEY(roomId), hostToken);
+    $('inpRoomM').value = roomId;
+    alert(`Rum skapat: ${roomId}`);
+    updateHostUI();
   }catch(e){ showErr('Skapa rum: '+e.message); }
 };
 
-$("btnJoin").onclick = ()=> joinRoom($("inpRoom").value.trim(), ($("inpName").value||"Spelare").trim());
-$("btnStart").onclick = ()=> startGame($("inpHostToken").value.trim() || hostToken);
+/* ====== Join (desktop/mobil) ====== */
+$('btnJoin').onclick = ()=> joinRoom($('inpRoom').value.trim(), ($('inpName').value||'Spelare').trim());
+$('btnJoinM').onclick = ()=> joinRoom($('inpRoomM').value.trim(), ($('inpNameM').value||'Spelare').trim());
 
-function joinRoom(rid,nm){
+function joinRoom(rid, nm){
   if(!rid) return showErr('Ange rumskod.');
+  roomId = rid;
+  // Om den här webbläsaren skapade rummet tidigare – hämta token
+  hostToken = localStorage.getItem(LS_KEY(roomId)) || null;
+  updateHostUI();
+
   ws = new WebSocket(wsURL());
-  ws.onopen=()=> ws.send(JSON.stringify({type:"join", room_id:rid, name:nm}));
-  ws.onmessage=ev=> onWS(JSON.parse(ev.data));
-  ws.onerror = ev => showErr('WebSocket-fel (se Console).');
+  ws.onopen    = ()=> ws.send(JSON.stringify({type:"join", room_id: rid, name: nm}));
+  ws.onmessage = ev => onWS(JSON.parse(ev.data));
+  ws.onerror   = ()=> showErr('WebSocket-fel (kolla Console).');
 }
 
-function startGame(tok){
+/* ====== Start (endast host visas) ====== */
+$('btnStart').onclick  = ()=> startGame();
+$('btnStartM').onclick = ()=> startGame();
+function startGame(){
   if(!ws) return showErr('Anslut först.');
-  if(!tok) return showErr('Host token saknas.');
-  ws.send(JSON.stringify({type:"start", host_token:tok}));
+  if(!hostToken) return showErr('Endast värden kan starta.');
+  ws.send(JSON.stringify({type:"start", host_token: hostToken}));
 }
 
-$("btnGuess").onclick = ()=>{
-  if(!ws) return showErr('Anslut först.');
-  if(!youMarker) return showErr('Klicka på kartan först.');
-  const {lat,lng}=youMarker.getLatLng();
-  ws.send(JSON.stringify({type:"guess", lat:lat, lon:lng}));
-};
-
+/* ====== WS-händelser ====== */
 function onWS(msg){
   if(msg.type==="room_state"){
-    setBoard($("board").querySelector("tbody"), msg.players);
+    setBoard($('board').querySelector('tbody'), msg.players);
   } else if(msg.type==="round_start"){
     $('hudRound').textContent = `Rond ${msg.round_index+1}`;
     startTimer(msg.time_limit);
@@ -250,17 +258,17 @@ function onWS(msg){
     if(targetMarker) map.removeLayer(targetMarker);
     targetMarker = L.circleMarker([msg.target.lat, msg.target.lon], {radius:8}).addTo(map).bindPopup('Rätt plats');
     map.panTo([msg.target.lat, msg.target.lon]);
-    setBoard($("board").querySelector("tbody"), msg.leaderboard);
+    setBoard($('board').querySelector('tbody'), msg.leaderboard);
   } else if(msg.type==="game_over"){
     clearInterval(timer);
-    setBoard($("board").querySelector("tbody"), msg.leaderboard);
-    alert("Spelet är slut! 🎉");
+    setBoard($('board').querySelector('tbody'), msg.leaderboard);
+    alert('Spelet är slut! 🎉');
   } else if(msg.type==="error"){
     showErr(msg.error);
   }
 }
 
-/* enkla panel/sheet toggles */
+/* ====== UI toggles ====== */
 function openPanel(){ $('sidePanel').style.display='block' }
 function closePanel(){ $('sidePanel').style.display='none' }
 function openSheet(){ $('mSheet').classList.add('open') }
