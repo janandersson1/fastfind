@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>FastFinder – Multiplayer</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <!-- App CSS -->
+  <link rel="stylesheet" href="fastfinder.css">
+</head>
+<body>
+  <div class="app">
+    <div id="map"></div>
+
+    <!-- Status -->
+    <div class="badge" id="statusBadge" aria-live="polite"><span class="dot"></span><span id="statusText">Redo</span></div>
+
+    <!-- Hint/Answer -->
+    <section class="hint-sheet" id="hintSheet" aria-live="polite">
+      <div class="hint-head">
+        <h3>Uppdrag</h3>
+        <div class="hint-actions">
+          <span class="chip" id="modeChip">—</span>
+          <button class="ghost" id="revealBtn" type="button" title="Visa svar">Visa svar</button>
+        </div>
+      </div>
+      <div class="hint-body">
+        <div class="row hint">
+          <div class="label">Ledtråd</div>
+          <div class="value" id="clueText">—</div>
+        </div>
+        <div class="row answer" id="answerRow">
+          <div class="label">Svar</div>
+          <div class="value" id="answerText">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multiplayer Setup -->
+    <section class="setup-sheet" id="setupSheetMulti">
+      <div class="setup-head">Multiplayer-inställningar</div>
+      <div class="setup-body">
+        <!-- Skapa rum -->
+        <div class="row">
+          <label for="selTrack">Område</label>
+          <select id="selTrack"></select>
+        </div>
+        <div class="row">
+          <label for="inpRounds">Rundor</label>
+          <input id="inpRounds" type="number" value="5" min="1" max="20">
+        </div>
+        <div class="row">
+          <label for="inpTime">Tidsbegränsning</label>
+          <input id="inpTime" type="number" value="60" min="10" max="240">
+        </div>
+        <div class="row">
+          <button id="btnHost">Skapa rum</button>
+        </div>
+
+        <!-- Anslut till rum -->
+        <div class="setup-head" style="margin-top:.25rem">Anslut till rum</div>
+        <div class="row">
+          <label for="inpRoom">Rumskod</label>
+          <input id="inpRoom" placeholder="ABC123">
+        </div>
+        <div class="row">
+          <label for="inpName">Spelarnamn</label>
+          <input id="inpName" placeholder="Ditt namn">
+          <button id="btnJoin">Gå med</button>
+        </div>
+
+        <div class="row">
+          <button id="btnStart" style="display:none">Starta</button>
+          <button id="btnCloseSetupMulti" type="button" style="background:#e9eef3;color:#20323a">Stäng</button>
+        </div>
+
+        <div id="miniBoard" class="leader" style="display:none"></div>
+      </div>
+    </section>
+
+    <!-- Solo Setup -->
+    <section class="setup-sheet" id="setupSheetSolo">
+      <div class="setup-head">Singelspel</div>
+      <div class="setup-body">
+        <div class="row">
+          <label for="selTrackSolo">Område</label>
+          <select id="selTrackSolo"></select>
+        </div>
+        <div class="row">
+          <button id="btnStartSolo">Starta</button>
+          <button id="btnCloseSetupSolo" type="button" style="background:#e9eef3;color:#20323a">Stäng</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom navigation -->
+    <nav class="bottom-bar" role="navigation" aria-label="Huvudmeny">
+      <button class="btn" id="btnSingle" title="Starta singelspel" data-active="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="7" r="3"/>
+          <path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/>
+        </svg>
+        <span>Solo</span>
+      </button>
+      <button class="btn" id="btnMulti" title="Starta multiplayer" data-active="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <circle cx="16" cy="8" r="3"/>
+          <path d="M2.5 20c0-3.2 2.8-5.5 6-5.5"/>
+          <path d="M21.5 20c0-3.2-2.8-5.5-6-5.5"/>
+        </svg>
+        <span>Multi</span>
+      </button>
+      <button class="btn" id="btnInfo" title="Info & regler">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-5"/><path d="M12 8h.01"/>
+        </svg>
+        <span>Info</span>
+      </button>
+      <button class="btn" id="btnBoard" title="Leaderboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 20h18"/>
+          <rect x="5" y="10" width="4" height="6" rx="1"/>
+          <rect x="10" y="6" width="4" height="10" rx="1"/>
+          <rect x="15" y="12" width="4" height="4" rx="1"/>
+        </svg>
+        <span>Toppl.</span>
+      </button>
+    </nav>
+
+    <!-- Overlay (countdown / results) -->
+    <div class="overlay hidden" id="overlay">
+      <div class="ov-card" id="ovCard">
+        <h2 class="ov-title" id="ovTitle">Spelet startar om</h2>
+        <div class="ov-sub" id="ovSub">Var redo att placera din markör</div>
+        <div class="countdown" id="ovCount">10</div>
+        <div class="leader" id="ovLeader" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast">Klart!</div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- App JS -->
+  <script>
+    /* ====== Helpers & Config ====== */
+    const API_BASE = "https://fastfinder-dcnk.onrender.com"; // ändra vid behov
+    const api = (p) => (API_BASE || "") + p;
+    function wsURL(){
+      if (API_BASE) return (API_BASE.startsWith("https") ? "wss://" : "ws://") + new URL(API_BASE).host + "/ws";
+      return (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws';
+    }
+    const $ = (id) => document.getElementById(id);
+    function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=> t.classList.remove('show'), 1200); }
+
+    /* ====== Map ====== */
+    let map, youMarker=null, targetMarker=null;
+    map = L.map('map', { zoomControl:false }).setView([59.3293, 18.0686], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(map);
+    window.addEventListener('load', ()=> setTimeout(()=> map.invalidateSize(), 50));
+
+    /* ====== UI State ====== */
+    const state = { mode:'multi', city:'Stockholm', round:0, rounds:0, answerRevealed:false };
+    function updateStatus(){
+      $('statusText').textContent = `${state.mode==='solo'?'Singelspel':'Multiplayer'} • ${state.city||'—'} • Omgång ${state.round||0}`;
+      $('modeChip').textContent = state.mode==='solo' ? 'Solo' : 'Multi';
+    }
+    // Reveal answer toggle
+    const answerRow = $('answerRow');
+    $('revealBtn').addEventListener('click', ()=>{
+      state.answerRevealed = !state.answerRevealed;
+      answerRow.classList.toggle('revealed', state.answerRevealed);
+      $('revealBtn').textContent = state.answerRevealed ? 'Dölj svar' : 'Visa svar';
+    });
+
+    /* ====== Tracks ====== */
+    function uniqueOrderedTracks(js){
+      if(!js || !Array.isArray(js.tracks)) return [];
+      const prefer = ["Stockholm","Malmö","Göteborg"];
+      const set = new Map();
+      js.tracks.forEach(t=>{ if(t) set.set(String(t).toLowerCase(), t); });
+      const arr = [...set.values()];
+      const first = prefer.filter(p=> arr.includes(p));
+      const rest = arr.filter(x=> !first.includes(x)).sort();
+      return [...first, ...rest];
+    }
+    async function loadTracks(){
+      try{
+        const r = await fetch(api('/api/tracks'));
+        if(!r.ok) throw new Error(`tracks ${r.status}`);
+        const js = await r.json();
+        const tracks = uniqueOrderedTracks(js);
+        const sel = $('selTrack'); sel.innerHTML='';
+        const selSolo = $('selTrackSolo'); selSolo.innerHTML='';
+        tracks.forEach(t=>{
+          const a = document.createElement('option'); a.value=t; a.textContent=`${t} (${js.counts?.[t] ?? "?"})`; sel.appendChild(a);
+          const b = document.createElement('option'); b.value=t; b.textContent=`${t} (${js.counts?.[t] ?? "?"})`; selSolo.appendChild(b);
+        });
+        if (!state.city && tracks.length) state.city = tracks[0];
+        updateStatus();
+      }catch(e){ toast('Kunde inte ladda Områden'); }
+    }
+    loadTracks();
+
+    /* ====== Overlay helpers ====== */
+    function showCountdown(title='Spelet startar om', seconds=10, sub='Var redo att placera din markör', onDone){
+      const ov=$('overlay'), t=$('ovTitle'), s=$('ovSub'), c=$('ovCount'), L=$('ovLeader');
+      t.textContent=title; s.textContent=sub; L.style.display='none';
+      let n=seconds; c.textContent=n; ov.classList.remove('hidden');
+      const iv=setInterval(()=>{ n--; c.textContent=n; if(n<=0){ clearInterval(iv); ov.classList.add('hidden'); onDone&&onDone(); } },1000);
+    }
+    function showResults(rightAddr, leaderboard, autoHideMs=10000, onHide){
+      const ov=$('overlay'), t=$('ovTitle'), s=$('ovSub'), c=$('ovCount'), L=$('ovLeader');
+      t.textContent='RÄTT SVAR'; s.textContent=`Adress: ${rightAddr||'—'}`; c.textContent='';
+      const rows=(leaderboard||[]).map((r,i)=>`<tr><td>${i+1}.</td><td>${r.name}</td><td style="text-align:right">${r.score_total}</td></tr>`).join('');
+      L.innerHTML=`<table><thead><tr><th>#</th><th>Spelare</th><th style="text-align:right">Poäng</th></tr></thead><tbody>${rows}</tbody></table>`;
+      L.style.display='block'; ov.classList.remove('hidden');
+      setTimeout(()=>{ ov.classList.add('hidden'); onHide&&onHide(); }, autoHideMs);
+    }
+
+    /* ====== Timer ====== */
+    let timer = null;
+    function startTimer(sec){
+      clearInterval(timer);
+      let s=sec;
+      timer = setInterval(()=>{ s=Math.max(0,s-1); if(s===0) clearInterval(timer); }, 1000);
+    }
+
+    /* ====== WebSocket / Multi ====== */
+    let ws=null, roomId=null, hostToken=null;
+    const LS_KEY = (rid) => `ff_host_token_${rid}`;
+    function updateHostUI(){ const isHost = !!hostToken && !!roomId; $('btnStart').style.display = isHost?'inline-block':'none'; }
+
+    // Create room
+    $('btnHost').onclick = async ()=>{
+      try{
+        const track=$('selTrack').value, rounds=+$('inpRounds').value, tl=+$('inpTime').value;
+        const r = await fetch(api('/api/room'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track, rounds, time_limit:tl})});
+        if(!r.ok) throw new Error(await r.text());
+        const js = await r.json();
+        roomId = js.room_id; hostToken = js.host_token;
+        localStorage.setItem(LS_KEY(roomId), hostToken);
+        $('inpRoom').value = roomId;
+        toast(`Rum skapat: ${roomId}`);
+        updateHostUI();
+      }catch(e){ toast('Skapa rum misslyckades'); }
+    };
+
+    // Join room
+    $('btnJoin').onclick = ()=> joinRoom(($('inpRoom').value||'').trim(), ($('inpName').value||'Spelare').trim());
+    function joinRoom(rid, nm){
+      if(!rid) return toast('Ange rumskod');
+      roomId = rid;
+      hostToken = localStorage.getItem(LS_KEY(roomId)) || null;
+      updateHostUI();
+      ws = new WebSocket(wsURL());
+      ws.onopen    = ()=> ws.send(JSON.stringify({type:"join", room_id: rid, name: nm}));
+      ws.onmessage = ev => onWS(JSON.parse(ev.data));
+      ws.onerror   = ()=> toast('WebSocket-fel');
+      $('setupSheetMulti').classList.remove('open');
+    }
+
+    // Start (host only)
+    $('btnStart').onclick = ()=>{
+      if(!ws) return toast('Anslut först');
+      if(!hostToken) return toast('Endast värden kan starta');
+      ws.send(JSON.stringify({type:"start", host_token: hostToken}));
+    };
+
+    // Map click -> place guess (client-side visual)
+    map.on('click', e=>{
+      if(!ws){ return toast('Anslut ett rum först'); }
+      if(youMarker) map.removeLayer(youMarker);
+      youMarker = L.marker(e.latlng).addTo(map).bindPopup('Din gissning').openPopup();
+    });
+
+    // WS events
+    function setMiniBoard(items){
+      const box=$('miniBoard'); if(!box) return;
+      const rows=(items||[]).map((r,i)=>`<tr><td>${i+1}.</td><td>${r.name}</td><td style="text-align:right">${r.score_total}</td></tr>`).join('');
+      box.innerHTML=`<table><thead><tr><th>#</th><th>Spelare</th><th style="text-align:right">Poäng</th></tr></thead><tbody>${rows}</tbody></table>`;
+      box.style.display='block';
+    }
+    function onWS(msg){
+      if(msg.type==="room_state"){
+        setMiniBoard(msg.players);
+      } else if(msg.type==="round_start"){
+        state.mode='multi'; state.round = (msg.round_index||0)+1; state.answerRevealed=false; updateStatus();
+        showCountdown('Ronden startar om', 3, 'Fokusera kartan & gör dig redo', ()=>{
+          startTimer(msg.time_limit);
+          if(targetMarker){ map.removeLayer(targetMarker); targetMarker=null; }
+          if(youMarker){ map.removeLayer(youMarker); youMarker=null; }
+          if(msg.clue) $('clueText').textContent = msg.clue;
+          if(msg.answer){ $('answerText').textContent = msg.answer; answerRow.classList.remove('revealed'); $('revealBtn').textContent='Visa svar'; }
+        });
+      } else if(msg.type==="guess_result"){
+        clearInterval(timer);
+        if(targetMarker) map.removeLayer(targetMarker);
+        targetMarker = L.circleMarker([msg.target.lat, msg.target.lon], {radius:8}).addTo(map).bindPopup('Rätt plats');
+        map.panTo([msg.target.lat, msg.target.lon]);
+        const addr = msg.target?.display_name || msg.target?.address || `${msg.target.lat?.toFixed?.(5)}, ${msg.target.lon?.toFixed?.(5)}`;
+        showResults(addr, msg.leaderboard, 10000);
+      } else if(msg.type==="game_over"){
+        clearInterval(timer);
+        const winner = (msg.leaderboard||[])[0]?.name || '—';
+        showResults(`Vinnare: ${winner}`, msg.leaderboard, 12000);
+      } else if(msg.type==="error"){
+        toast(msg.error||'Fel');
+      }
+    }
+
+    /* ====== Solo ====== */
+    const setupSolo = $('setupSheetSolo');
+    const selTrackSolo = $('selTrackSolo');
+    $('btnSingle').addEventListener('click', ()=> setupSolo.classList.add('open'));
+    $('btnCloseSetupSolo').addEventListener('click', ()=> setupSolo.classList.remove('open'));
+    $('btnStartSolo').addEventListener('click', ()=>{
+      const city = selTrackSolo.value || 'Stockholm';
+      state.mode='solo'; state.city=city; state.round=1; state.rounds=5;
+      $('clueText').textContent = '—';
+      $('answerText').textContent = '—';
+      answerRow.classList.remove('revealed'); $('revealBtn').textContent='Visa svar';
+      toast(`Startar singelspel i ${city}`);
+      updateStatus();
+      setupSolo.classList.remove('open');
+      // Om du har solo-API, trigga hämta första ledtråden här
+      // showCountdown('Ronden startar om', 3, 'Fokusera kartan & gör dig redo', ()=> startTimer(<sek>));
+    });
+
+    /* ====== Multi sheet toggles ====== */
+    const setupMulti = $('setupSheetMulti');
+    $('btnMulti').addEventListener('click', ()=> setupMulti.classList.add('open'));
+    $('btnCloseSetupMulti').addEventListener('click', ()=> setupMulti.classList.remove('open'));
+
+    /* ====== Info / Toppl-knappar ====== */
+    $('btnInfo').addEventListener('click', ()=>{
+      const el = $('hintSheet'); const prev = el.style.boxShadow;
+      el.style.boxShadow='0 0 0 3px rgba(94,114,94,.35)'; setTimeout(()=> el.style.boxShadow=prev || 'var(--shadow)', 550);
+    });
+    $('btnBoard').addEventListener('click', ()=>{
+      // öppna/stäng miniBoard i multi-sheet
+      const b=$('miniBoard'); if(!b) return; setupMulti.classList.add('open'); b.style.display = (b.style.display==='none' || !b.style.display) ? 'block' : 'none';
+    });
+
+    /* ====== Init ====== */
+    updateStatus();
+  </script>
+</body>
+</html>
